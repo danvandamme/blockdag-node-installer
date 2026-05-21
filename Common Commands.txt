@@ -1,0 +1,31 @@
+Common BlockDAG Node commands
+
+# start everything
+cd C:\blockdag node
+docker compose up -d
+
+# stop everything
+docker compose down
+
+#restart everything
+docker compose restart
+
+# See what is running
+docker compose ps
+
+
+# check node logs (Node 1)
+docker compose logs -f bdag-miner-node-1
+
+# check node logs (Node 1)
+docker compose logs -f bdag-miner-node-2
+
+# open the firewall ports
+$ports = @(8151, 8152, 18545, 18546, 38131, 3334)
+foreach ($port in $ports) {
+    New-NetFirewallRule -DisplayName "BlockDAG $port" -Direction Inbound -Protocol TCP -LocalPort $port -Action Allow
+}
+
+
+# Check Block Height
+curl -X POST http://localhost:38131 -H "Content-Type: application/json" --data "{\"jsonrpc\":\"2.0\",\"method\":\"getblockcount\",\"params\":[],\"id\":1}"

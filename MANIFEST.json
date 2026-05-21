@@ -1,0 +1,66 @@
+{
+  "package_name": "blockdag-pool-release-20260510-132438",
+  "created_at_local": "2026-05-10T13:45:00+02:00",
+  "host": "jeremy mining host",
+  "purpose": "Beginner-friendly BlockDAG ASIC pool installer for Debian/Ubuntu hosts on linux/amd64 and linux/arm64.",
+  "runtime_topology": {
+    "pool": "single stratum pool",
+    "backend_nodes": 2,
+    "database": "postgres:15-alpine",
+    "rpc_failover": "haproxy:2.9-alpine",
+    "dashboard": "local Python dashboard/watchdog installed by ops/install-dashboard.sh"
+  },
+  "source_refs": {
+    "pool": {
+      "repo": "/home/jeremy/blockdag-source/pool",
+      "branch": "feature/pool-authorize-current-job-resend",
+      "commit": "cb1ae7c123f1d47d9eb5d89fed2c6813040599ee"
+    },
+    "node": {
+      "repo": "/home/jeremy/blockdag-source/blockdag-corechain-reward-extra-clean",
+      "branch": "feature/corechain-reward-extra-consensus-validation",
+      "commit": "4aa9d36d026564316e13a723bd621753528ba0f7"
+    }
+  },
+  "docker_images": {
+    "linux_amd64": {
+      "archive": "artifacts/images/linux-amd64/blockdag-stack-linux-amd64-images.tar.zst",
+      "sha256": "82b456696fd2d68702c5dc94486e8f8d45dc215afb87b8f9b9e61b46cba2177a",
+      "pool_image_id": "sha256:6405e161a9455eb1fc11aa076bf5ee840a35137f0e5f94f1957c0cbcb28c9158",
+      "node_image_id": "sha256:9116d98ff6adc7291a4c04e97fdb74a6d66d275c85255d21423d89861e4d17c3",
+      "support_images": ["postgres:15-alpine", "haproxy:2.9-alpine"]
+    },
+    "linux_arm64": {
+      "archive": "artifacts/images/linux-arm64/blockdag-stack-linux-arm64-images.tar.zst",
+      "sha256": "94012a6c3810d686e33b3d36f84514db98a4602162001f73e65aacaed428d489",
+      "pool_image_id": "sha256:469fcdee0fbc0152fac209a7eb66192828e44c47d6506ba21dc266c038457e23",
+      "node_image_id": "sha256:fbc77568a281779a8dc2647bb36e9394c1fb5e908e7aebb58770161f018448f5",
+      "support_images": ["postgres:15-alpine", "haproxy:2.9-alpine"]
+    }
+  },
+  "binaries": {
+    "linux_amd64": {
+      "bdag": "56153d5c02ebdf95a2abb899635f83564fef6e10705564f16a5ffcdcca40878d",
+      "nodeworker": "7b130d05442c0337daa9c9bcfa9cd747d6c58c8aec0a0050a92e14c77892305e",
+      "pool": "ad612d899560017dbfb8fe65edea09d573d9f95cf97355b412aa4b37dd6f8526"
+    },
+    "linux_arm64": {
+      "bdag": "9d0084bd7e1805f9524bbf4d52458e2a82e363a88932a2de9ce9ed87125e0716",
+      "nodeworker": "8c5b3d4dfc15b6225f7c2cbae4d9824bddaca273e15e8b2af27d015650e94f42",
+      "pool": "01e59ef8f27c32dedcbdcfb324e86c12a5cd2571e96f2a5015426c3e97519319"
+    }
+  },
+  "chain_seed": {
+    "archive": "chain-data/chain-data-seed.zip",
+    "sha256": "5bed877ca2fa8661a75c209fc24c2de56c346140b9a51d9b398c5ba56ea8959d",
+    "size_bytes": 5822739890,
+    "source": "/home/jeremy/blockdag-asic-pool/data-restore/latest-hourly",
+    "source_resolved": "/home/jeremy/blockdag-asic-pool/data-restore/hourly/bdag-node2-hourly-20260509T230137Z",
+    "notes": "One chain seed is unpacked once and copied to both backend node data directories during install."
+  },
+  "safety_notes": [
+    "The live mining services were not stopped or restarted to create this package.",
+    "The chain seed came from an existing restore copy instead of a new stopped-node export.",
+    "The miner wizard scans LAN targets and configures ASICs one at a time."
+  ]
+}

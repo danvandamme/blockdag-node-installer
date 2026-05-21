@@ -1,0 +1,4 @@
+BlockDAG Dashboad
+
+1- install python
+https://www.python.org/downloads/windows/

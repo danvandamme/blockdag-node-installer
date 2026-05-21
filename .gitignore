@@ -1,0 +1,39 @@
+# ── Secrets / credentials ─────────────────────────────────────────────────────
+.env
+asic-pool/.env
+
+# ── Docker image tarballs (large binary files, distributed separately) ─────────
+*.tar
+*.tar.gz
+
+# ── Runtime chain data ────────────────────────────────────────────────────────
+chain-data/node1/
+chain-data/node2/
+chain-data/postgres/
+
+# ── Generated runtime state (created by dashboard server) ─────────────────────
+dashboard/alerts.json
+dashboard/payout.json
+dashboard/alert-history.json
+dashboard/backup-config.json
+dashboard/maintenance.json
+dashboard/peers-managed.txt
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Generated shortcuts (written by installer, not source) ────────────────────
+shortcuts/
+
+# ── Developer tools (local only) ─────────────────────────────────────────────
+git-push.bat
+
+# ── Windows junk ──────────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini

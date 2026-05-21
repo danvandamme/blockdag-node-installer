@@ -1,0 +1,486 @@
+﻿x-mining-logging: &mining-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+services:
+  asic-pool:
+    image: ${POOL_IMAGE:-nathanbdagnetwork/asic-pool:latest}
+    container_name: asic-pool
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 3072
+   # blkio_config:
+   #   weight: 900
+    oom_score_adj: -800
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    env_file:
+      - ./asic-pool/.env
+    working_dir: /data/asic-pool
+    volumes:
+      - ./asic-pool:/data/asic-pool:ro
+    environment:
+      POOL_PORT: ${POOL_PORT:-3334}
+      NODE_RPC_URL: http://rpc-failover:38131
+      NODE_RPC_URLS: http://rpc-failover:38131
+      NODE_RPC_USER: ${NODE_RPC_USER:-test}
+      NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
+
+      WALLET_RPC_URL: http://bdag-miner-node-1:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
+      POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
+      POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
+      POOL_FEE_PERCENTAGE: ${POOL_FEE_PERCENTAGE:-2.0}
+      PG_URL: ${PG_URL:-postgres://test:test@pool-db:5432/pool}
+      POOL_PRIVATE_KEY: ${POOL_PRIVATE_KEY:-}
+    ports:
+      - "${POOL_PORT:-3334}:3334"
+    networks:
+      - pool-net
+    depends_on:
+      pool-db:
+        condition: service_started
+      rpc-failover:
+        condition: service_started
+
+  asic-pool-penelope:
+    profiles:
+      - multi-pool
+    image: ${POOL_IMAGE:-nathanbdagnetwork/asic-pool:latest}
+    container_name: asic-pool-penelope
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 1024
+  #  blkio_config:
+  #    weight: 700
+    oom_score_adj: -700
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    env_file:
+      - ./asic-pool/.env
+    working_dir: /data/asic-pool
+    volumes:
+      - ./asic-pool:/data/asic-pool:ro
+    environment:
+      POOL_PORT: 3334
+      MINING_ADDRESS: 0xBE7Cbc15d28009B337C31D56f7EDBaE44121CAA4
+      NODE_RPC_URL: http://rpc-failover:38131
+      NODE_RPC_URLS: http://rpc-failover:38131
+      NODE_RPC_USER: ${NODE_RPC_USER:-test}
+      NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
+      WALLET_RPC_URL: http://bdag-miner-node-1:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
+      POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
+      POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
+      POOL_FEE_PERCENTAGE: ${POOL_FEE_PERCENTAGE:-2.0}
+      PG_URL: ${PG_URL:-postgres://test:test@pool-db:5432/pool}
+      POOL_PRIVATE_KEY: ${POOL_PRIVATE_KEY:-}
+    ports:
+      - "3335:3334"
+    networks:
+      - pool-net
+    depends_on:
+      pool-db:
+        condition: service_started
+      rpc-failover:
+        condition: service_started
+
+  asic-pool-odysseus:
+    profiles:
+      - multi-pool
+    image: ${POOL_IMAGE:-nathanbdagnetwork/asic-pool:latest}
+    container_name: asic-pool-odysseus
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 1024
+  #  blkio_config:
+  #    weight: 700
+    oom_score_adj: -700
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    env_file:
+      - ./asic-pool/.env
+    working_dir: /data/asic-pool
+    volumes:
+      - ./asic-pool:/data/asic-pool:ro
+    environment:
+      POOL_PORT: 3334
+      MINING_ADDRESS: 0xEad2d76d7B50E1c9C619BD35DD6B184aBe5B6C07
+      NODE_RPC_URL: http://rpc-failover:38131
+      NODE_RPC_URLS: http://rpc-failover:38131
+      NODE_RPC_USER: ${NODE_RPC_USER:-test}
+      NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
+      WALLET_RPC_URL: http://bdag-miner-node-1:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
+      POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
+      POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
+      POOL_FEE_PERCENTAGE: ${POOL_FEE_PERCENTAGE:-2.0}
+      PG_URL: ${PG_URL:-postgres://test:test@pool-db:5432/pool}
+      POOL_PRIVATE_KEY: ${POOL_PRIVATE_KEY:-}
+    ports:
+      - "3336:3334"
+    networks:
+      - pool-net
+    depends_on:
+      pool-db:
+        condition: service_started
+      rpc-failover:
+        condition: service_started
+
+  asic-pool-telemachus:
+    profiles:
+      - multi-pool
+    image: ${POOL_IMAGE:-nathanbdagnetwork/asic-pool:latest}
+    container_name: asic-pool-telemachus
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 1024
+  #  blkio_config:
+  #    weight: 700
+    oom_score_adj: -700
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    env_file:
+      - ./asic-pool/.env
+    working_dir: /data/asic-pool
+    volumes:
+      - ./asic-pool:/data/asic-pool:ro
+    environment:
+      POOL_PORT: 3334
+      MINING_ADDRESS: 0xD5F8DF0A60bC1Ff4636250b2a2dff319Bf79B1f5
+      NODE_RPC_URL: http://rpc-failover:38131
+      NODE_RPC_URLS: http://rpc-failover:38131
+      NODE_RPC_USER: ${NODE_RPC_USER:-test}
+      NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
+      WALLET_RPC_URL: http://bdag-miner-node-1:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
+      POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
+      POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
+      POOL_FEE_PERCENTAGE: ${POOL_FEE_PERCENTAGE:-2.0}
+      PG_URL: ${PG_URL:-postgres://test:test@pool-db:5432/pool}
+      POOL_PRIVATE_KEY: ${POOL_PRIVATE_KEY:-}
+    ports:
+      - "3337:3334"
+    networks:
+      - pool-net
+    depends_on:
+      pool-db:
+        condition: service_started
+      rpc-failover:
+        condition: service_started
+
+  asic-pool-hector:
+    profiles:
+      - multi-pool
+    image: ${POOL_IMAGE:-nathanbdagnetwork/asic-pool:latest}
+    container_name: asic-pool-hector
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 1024
+  #  blkio_config:
+  #    weight: 700
+    oom_score_adj: -700
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    env_file:
+      - ./asic-pool/.env
+    working_dir: /data/asic-pool
+    volumes:
+      - ./asic-pool:/data/asic-pool:ro
+    environment:
+      POOL_PORT: 3334
+      MINING_ADDRESS: 0xd72C6af6bbD4929A33a0cFcAF5F6d3ec98D85556
+      NODE_RPC_URL: http://rpc-failover:38131
+      NODE_RPC_URLS: http://rpc-failover:38131
+      NODE_RPC_USER: ${NODE_RPC_USER:-test}
+      NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
+      WALLET_RPC_URL: http://bdag-miner-node-1:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
+      POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
+      POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
+      POOL_FEE_PERCENTAGE: ${POOL_FEE_PERCENTAGE:-2.0}
+      PG_URL: ${PG_URL:-postgres://test:test@pool-db:5432/pool}
+      POOL_PRIVATE_KEY: ${POOL_PRIVATE_KEY:-}
+    ports:
+      - "3338:3334"
+    networks:
+      - pool-net
+    depends_on:
+      pool-db:
+        condition: service_started
+      rpc-failover:
+        condition: service_started
+
+  asic-pool-athena:
+    profiles:
+      - multi-pool
+    image: ${POOL_IMAGE:-nathanbdagnetwork/asic-pool:latest}
+    container_name: asic-pool-athena
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 1024
+  #  blkio_config:
+  #    weight: 700
+    oom_score_adj: -700
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    env_file:
+      - ./asic-pool/.env
+    working_dir: /data/asic-pool
+    volumes:
+      - ./asic-pool:/data/asic-pool:ro
+    environment:
+      POOL_PORT: 3334
+      MINING_ADDRESS: 0x1719E0ee598c15957448D5E568948101DF78e7A0
+      NODE_RPC_URL: http://rpc-failover:38131
+      NODE_RPC_URLS: http://rpc-failover:38131
+      NODE_RPC_USER: ${NODE_RPC_USER:-test}
+      NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
+      WALLET_RPC_URL: http://bdag-miner-node-1:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
+      POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
+      POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
+      POOL_FEE_PERCENTAGE: ${POOL_FEE_PERCENTAGE:-2.0}
+      PG_URL: ${PG_URL:-postgres://test:test@pool-db:5432/pool}
+      POOL_PRIVATE_KEY: ${POOL_PRIVATE_KEY:-}
+    ports:
+      - "3339:3334"
+    networks:
+      - pool-net
+    depends_on:
+      pool-db:
+        condition: service_started
+      rpc-failover:
+        condition: service_started
+
+  asic-pool-achilles:
+    profiles:
+      - multi-pool
+    image: ${POOL_IMAGE:-nathanbdagnetwork/asic-pool:latest}
+    container_name: asic-pool-achilles
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 1024
+  #  blkio_config:
+  #    weight: 700
+    oom_score_adj: -700
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    env_file:
+      - ./asic-pool/.env
+    working_dir: /data/asic-pool
+    volumes:
+      - ./asic-pool:/data/asic-pool:ro
+    environment:
+      POOL_PORT: 3334
+      MINING_ADDRESS: 0x36d150a0B78a2BAc63a135E70fFb50b68dC6dBc9
+      NODE_RPC_URL: http://rpc-failover:38131
+      NODE_RPC_URLS: http://rpc-failover:38131
+      NODE_RPC_USER: ${NODE_RPC_USER:-test}
+      NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
+      WALLET_RPC_URL: http://bdag-miner-node-1:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
+      POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
+      POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
+      POOL_FEE_PERCENTAGE: ${POOL_FEE_PERCENTAGE:-2.0}
+      PG_URL: ${PG_URL:-postgres://test:test@pool-db:5432/pool}
+      POOL_PRIVATE_KEY: ${POOL_PRIVATE_KEY:-}
+    ports:
+      - "3340:3334"
+    networks:
+      - pool-net
+    depends_on:
+      pool-db:
+        condition: service_started
+      rpc-failover:
+        condition: service_started
+
+  # Keep HAProxy simple so it doesn't add JSON-RPC probe load on the miners.
+  rpc-failover:
+    image: haproxy:2.9-alpine
+    container_name: rpc-failover
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 2048
+  #  blkio_config:
+  #    weight: 800
+    oom_score_adj: -700
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - pool-net
+    ports:
+      - "38131:38131"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      bdag-miner-node-1:
+        condition: service_started
+      bdag-miner-node-2:
+        condition: service_started
+
+  bdag-miner-node-1:
+    image: ${BLOCKDAG_NODE_IMAGE:-nathanbdagengineering/bdag-gameday-binaries:mainnet}
+    container_name: bdag-miner-node-1
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 4096
+  #  blkio_config:
+  #    weight: 1000
+    oom_score_adj: -900
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    volumes:
+      - ./chain-data/node1:/data
+    environment:
+      ROLLOUT_WINDOW: 30m
+      HEALTH_MIN_PEERS: 1
+      RPC_URL: "ws://127.0.0.1:18546"
+      NODE_ARGS: >
+        --p2ptcpport=8151
+        --listen=0.0.0.0
+        --addpeer=${NODE1_PEER_ADDRESSES}
+        --rpclisten=0.0.0.0:38131
+        --evm.http.port=18545
+        --evm.http.addr=0.0.0.0
+        --datadir=/data
+        --notls
+        --rpcuser=${NODE_RPC_USER:-test}
+        --rpcpass=${NODE_RPC_PASS:-test}
+        --rpcmaxclients=100
+        --evm.http.api=eth,net,web3,txpool,debug
+        --http.writetimeout=45s
+        --http.idletimeout=45s
+        --acctmode
+        --modules=Blockdag,miner
+        --evmenv="--rpc.allow-unprotected-txs --metrics --metrics.addr 0.0.0.0 --metrics.port 6060"
+        --metrics
+        --rpcmaxconcurrentreqs=500
+        --maxpeers=350
+        --http.ratelimit=1800
+        --http.rateburst=3200
+        --evm.ws.port=18546
+        --evm.ws.addr=0.0.0.0
+        --miner
+        --miningaddr=${MINING_ADDRESS}
+    networks:
+      - pool-net
+    ports:
+      - "8151:8151"
+      - "6061:6060"
+
+  bdag-miner-node-2:
+    image: ${BLOCKDAG_NODE_IMAGE:-nathanbdagengineering/bdag-gameday-binaries:mainnet}
+    container_name: bdag-miner-node-2
+    restart: unless-stopped
+    logging: *mining-logging
+    cpu_shares: 4096
+  #  blkio_config:
+  #    weight: 1000
+    oom_score_adj: -900
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    volumes:
+      - ./chain-data/node2:/data
+    environment:
+      ROLLOUT_WINDOW: 30m
+      HEALTH_MIN_PEERS: 1
+      RPC_URL: "ws://127.0.0.1:18546"
+      NODE_ARGS: >
+        --p2ptcpport=8152
+        --listen=0.0.0.0
+        --addpeer=${NODE2_PEER_ADDRESSES}
+        --rpclisten=0.0.0.0:38131
+        --evm.http.port=18545
+        --evm.http.addr=0.0.0.0
+        --datadir=/data
+        --notls
+        --rpcuser=${NODE_RPC_USER:-test}
+        --rpcpass=${NODE_RPC_PASS:-test}
+        --rpcmaxclients=100
+        --evm.http.api=eth,net,web3,txpool,debug
+        --http.writetimeout=45s
+        --http.idletimeout=45s
+        --acctmode
+        --modules=Blockdag,miner
+        --evmenv="--rpc.allow-unprotected-txs --metrics --metrics.addr 0.0.0.0 --metrics.port 6060"
+        --metrics
+        --rpcmaxconcurrentreqs=500
+        --maxpeers=350
+        --http.ratelimit=1800
+        --http.rateburst=3200
+        --evm.ws.port=18546
+        --evm.ws.addr=0.0.0.0
+        --miner
+        --miningaddr=${MINING_ADDRESS}
+    networks:
+      - pool-net
+    ports:
+      - "8152:8152"
+      - "6062:6060"
+
+  pool-db:
+    image: postgres:15-alpine
+    container_name: pool-db
+    restart: unless-stopped
+    logging: *mining-logging
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=10GB
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - checkpoint_timeout=15min
+    cpu_shares: 3072
+   # blkio_config:
+   #   weight: 900
+    oom_score_adj: -800
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    ports:
+      - "5432:5432"
+    env_file:
+      - ./asic-pool/.env
+    volumes:
+      - ./chain-data/postgres:/var/lib/postgresql/data
+      - ./asic-pool/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    networks:
+      - pool-net
+
+networks:
+  pool-net:
+    driver: bridge

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BlockDAG Node Installer</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 780px; margin: 40px auto; padding: 0 20px; color: #222; line-height: 1.6; }
+    h1 { color: #1a1a2e; }
+    h2 { color: #16213e; margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    code, pre { background: #f4f4f4; border-radius: 4px; padding: 2px 6px; font-family: Consolas, monospace; }
+    pre { padding: 12px; overflow-x: auto; }
+    .note  { background: #fff8e1; border-left: 4px solid #f9a825; padding: 10px 14px; margin: 1em 0; }
+    .good  { background: #e8f5e9; border-left: 4px solid #43a047; padding: 10px 14px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
+    td, th { border: 1px solid #ddd; padding: 8px 12px; text-align: left; vertical-align: top; }
+    th { background: #f0f0f0; font-weight: 600; }
+    ul, ol { margin: 0.4em 0 0.8em 0; padding-left: 1.4em; }
+    li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+
+  <h1>BlockDAG Node Installer</h1>
+  <p>Installs the full BlockDAG mining node stack on a Windows machine using Docker.
+     Includes two redundant nodes, a stratum pool, PostgreSQL database, and a web dashboard.</p>
+
+  <h2>Prerequisites</h2>
+  <table>
+    <tr><th>Requirement</th><th>Notes</th></tr>
+    <tr>
+      <td><strong>Windows 10 or 11</strong> (64-bit)</td>
+      <td>WSL 2 must be enabled. Docker Desktop will prompt you to enable it if needed.</td>
+    </tr>
+    <tr>
+      <td><strong><a href="https://www.docker.com/products/docker-desktop">Docker Desktop</a></strong></td>
+      <td>Required. The installer will start Docker automatically if it is installed but not running.</td>
+    </tr>
+    <tr>
+      <td><strong><a href="https://www.python.org/downloads/">Python 3.8+</a></strong> &mdash; optional</td>
+      <td>Needed for the web dashboard. If Python is not found, the installer will note this and
+          the dashboard shortcut will show instructions. Install Python then re-run the installer
+          to enable it.</td>
+    </tr>
+    <tr>
+      <td><strong>RAM: 8 GB minimum, 16 GB recommended</strong></td>
+      <td>The stack runs two full nodes, a pool, and a database concurrently.</td>
+    </tr>
+    <tr>
+      <td><strong>Disk: 100 GB+ free space</strong></td>
+      <td>Chain data grows over time. An SSD is strongly recommended.</td>
+    </tr>
+  </table>
+
+  <h2>Quick Start</h2>
+  <p>Double-click <code>install-node-windows.bat</code>, or run from a terminal:</p>
+  <pre><code>.\install-node-windows</code></pre>
+  <p>The installer will ask for your <strong>mining wallet address</strong>, then proceed automatically.</p>
+
+  <h2>What the Installer Does</h2>
+  <ol>
+    <li>Verifies that Docker is installed and starts it if needed</li>
+    <li>Stops and removes any existing BlockDAG containers</li>
+    <li>Loads the BlockDAG Docker images from the bundled <code>.tar</code> files</li>
+    <li>Asks for your wallet address (the only prompt)</li>
+    <li>Creates <code>C:\blockdag node\</code> and copies all files into it</li>
+    <li>Writes the <code>.env</code> configuration file with your wallet and default settings</li>
+    <li>Creates the shortcuts folder and a desktop shortcut</li>
+    <li>Starts the node stack automatically</li>
+    <li>Launches the web dashboard and opens it in your browser (requires Python)</li>
+  </ol>
+
+  <h2>Desktop Shortcut</h2>
+  <p>A single <strong>BlockDAG Node</strong> shortcut is placed on the desktop.
+     It opens the <code>C:\blockdag node\shortcuts\</code> folder which contains:</p>
+  <table>
+    <tr><th>Script</th><th>What it does</th></tr>
+    <tr><td><code>start-node.bat</code></td><td>Starts the full node stack</td></tr>
+    <tr><td><code>stop-node.bat</code></td><td>Stops the node stack</td></tr>
+    <tr><td><code>node-status.bat</code></td><td>Shows running containers and recent pool logs</td></tr>
+    <tr><td><code>node-logs.bat</code></td><td>Streams live logs from all containers (Ctrl+C to exit)</td></tr>
+    <tr><td><code>dashboard.bat</code></td><td>Opens the web dashboard, starting the server if needed</td></tr>
+  </table>
+
+  <h2>Web Dashboard</h2>
+  <p>The dashboard runs at <strong><a href="http://localhost:8088">http://localhost:8088</a></strong>
+     and provides live monitoring and management:</p>
+  <ul>
+    <li>Node sync status, block height, peers, and uptime</li>
+    <li>Pool hashrate, workers/miners with IP addresses, share counts</li>
+    <li>Payout history and balance information</li>
+    <li>Container health and resource usage</li>
+    <li>Peer manager with selective import</li>
+    <li>Live log viewer</li>
+  </ul>
+  <p>Use the <strong>Config</strong> button in the toolbar to change pool settings (fee, difficulty,
+     stratum port, password, wallet address) without editing files manually. Changes are applied
+     to both <code>.env</code> files and the stack is restarted automatically.</p>
+
+  <div class="note">
+    <strong>Dashboard requires Python.</strong> Install
+    <a href="https://www.python.org/downloads/">Python 3.8+</a> and re-run the installer
+    if the dashboard did not start.
+    Tick <em>"Add Python to PATH"</em> during the Python installer.
+  </div>
+
+  <h2>Connecting Miners</h2>
+  <p>Point your ASIC or miner software at the stratum port on this machine:</p>
+  <pre><code>stratum+tcp://YOUR_SERVER_IP:3334</code></pre>
+  <p>Default pool password: <code>1234</code> &mdash; change it in the dashboard Config window.</p>
+
+  <h2>Install Directory</h2>
+  <p>Everything lives under <code>C:\blockdag node\</code>:</p>
+  <table>
+    <tr><th>Path</th><th>Contents</th></tr>
+    <tr><td><code>chain-data\node1\</code></td><td>Blockchain data for node 1</td></tr>
+    <tr><td><code>chain-data\node2\</code></td><td>Blockchain data for node 2</td></tr>
+    <tr><td><code>chain-data\postgres\</code></td><td>Pool database storage</td></tr>
+    <tr><td><code>dashboard\</code></td><td>Web dashboard server and HTML files</td></tr>
+    <tr><td><code>shortcuts\</code></td><td>Management batch scripts</td></tr>
+    <tr><td><code>asic-pool\</code></td><td>Pool configuration and database schema</td></tr>
+    <tr><td><code>.env</code></td><td>Main configuration file</td></tr>
+  </table>
+
+  <h2>Changing Settings After Install</h2>
+  <p>The easiest way is the <strong>Config</strong> button in the web dashboard &mdash; it saves
+     to both <code>.env</code> files and restarts the stack automatically.</p>
+  <p>Alternatively, edit <code>C:\blockdag node\.env</code> directly, copy it to
+     <code>C:\blockdag node\asic-pool\.env</code>, then restart using <code>start-node.bat</code>.</p>
+
+  <div class="note">
+    <strong>Pool private key</strong> (for automatic payouts): set <code>POOL_PRIVATE_KEY</code>
+    manually in both <code>.env</code> files. Do not enter it into any web interface.
+  </div>
+
+  <h2>Chain Data Pre-Seeding (Optional)</h2>
+  <p>If you have a chain data snapshot, copy its contents into
+     <code>C:\blockdag node\chain-data\node1\</code> and <code>node2\</code>
+     <em>before</em> starting the stack. This skips syncing from block 0 and can save many hours.</p>
+
+  <script type="application/json" id="agent-metadata">
+  {"document_type":"installer_guide","platform":"windows","installer":"install-node-windows.bat"}
+  </script>
+
+</body>
+</html>

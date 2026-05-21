@@ -1,0 +1,2779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BlockDAG Node Monitor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+  <style>
+    :root {
+      --bg-page:    #f5f5f0; --bg-card:  #ffffff; --bg-metric: #ebebeb; --bg-input: #ffffff;
+      --border:     #e0e0e0; --border-row: #f0f0f0;
+      --text:       #1a1a1a; --text-muted: #666666; --text-sub: #888888; --text-ts: #999999;
+    }
+    body.dark {
+      --bg-page:    #111214; --bg-card:  #1e2028; --bg-metric: #2a2d36; --bg-input: #252830;
+      --border:     #3a3d4a; --border-row: #2e3140;
+      --text:       #e4e6f0; --text-muted: #9498a8; --text-sub: #6b6f80; --text-ts: #6b6f80;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: var(--bg-page); color: var(--text); padding: 24px; min-height: 100vh; transition: background .2s, color .2s; }
+    h1 { font-size: 22px; font-weight: 500; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .metric { background: var(--bg-metric); border-radius: 7px; padding: 10px 14px; display: flex; align-items: flex-start; gap: 10px; flex: 1; min-width: 170px; overflow: hidden; }
+    .metric-label { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; white-space: nowrap; flex-shrink: 0; padding-top: 2px; }
+    .metric-value { font-size: 18px; font-weight: 600; white-space: nowrap; }
+    .metric-sub { font-size: 13px; color: var(--text-sub); white-space: normal; word-break: break-word; }
+    .sections-grid { columns: 3; column-gap: 12px; margin-bottom: 12px; }
+    @media (max-width: 1000px) { .sections-grid { columns: 2; } }
+    @media (max-width: 600px)  { .sections-grid { columns: 1; } }
+    @media (max-width: 700px)  { #node-panels-grid { grid-template-columns: 1fr !important; } }
+    .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 12px; break-inside: avoid; }
+    .section-title { font-size: 14px; font-weight: 500; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+    .row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border-row); font-size: 15px; }
+    .row:last-child { border-bottom: none; padding-bottom: 0; }
+    .row-label { color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+    .row-value { font-weight: 500; font-family: monospace; font-size: 14px; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 4px 11px; border-radius: 6px; font-weight: 500; }
+    .badge-ok   { background: #e6f4ea; color: #1e7e34; }
+    .badge-warn { background: #fff3cd; color: #856404; }
+    .badge-err  { background: #fce8e8; color: #a32d2d; }
+    body.dark .badge-ok   { background: #1a3a24; color: #4caf70; }
+    body.dark .badge-warn { background: #3a2e00; color: #e6b030; }
+    body.dark .badge-err  { background: #3a1a1a; color: #e06060; }
+    .wallet { font-family: monospace; font-size: 14px; word-break: break-all; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+    .ts { font-size: 14px; color: var(--text-ts); min-width: 220px; white-space: nowrap; flex-shrink: 0; }
+    button { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 16px; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .15s; }
+    button:hover { background: var(--bg-metric); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-green  { background: #e6f4ea; border-color: #a8d5b5; color: #1e7e34; }
+    .btn-green:hover  { background: #c8ecd4; }
+    .btn-red    { background: #fce8e8; border-color: #f0b8b8; color: #a32d2d; }
+    .btn-red:hover    { background: #f8d0d0; }
+    .btn-blue   { background: #e8f0fe; border-color: #b0c8f8; color: #1a56db; }
+    .btn-blue:hover   { background: #d0e2fc; }
+    .btn-orange { background: #fff3cd; border-color: #ffc966; color: #856404; }
+    .btn-orange:hover { background: #ffe8a0; }
+    body.dark .btn-green  { background: #1a3a24; border-color: #2a6040; color: #4caf70; }
+    body.dark .btn-green:hover  { background: #234d2e; }
+    body.dark .btn-red    { background: #3a1a1a; border-color: #6a2a2a; color: #e06060; }
+    body.dark .btn-red:hover    { background: #4a2020; }
+    body.dark .btn-blue   { background: #1a2a4a; border-color: #2a4a80; color: #6a9adf; }
+    body.dark .btn-blue:hover   { background: #1e3258; }
+    body.dark .btn-orange { background: #3a2a00; border-color: #6a4a00; color: #e6b030; }
+    body.dark .btn-orange:hover { background: #4a3600; }
+    .note { font-size: 13px; color: var(--text-ts); margin-top: 8px; line-height: 1.6; }
+    .container-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-row); font-size: 14px; }
+    .container-row:last-child { border-bottom: none; }
+    .container-name { font-family: monospace; }
+    input[type=text], input[type=number], input[type=password] { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 11px; font-size: 14px; width: 100%; margin-bottom: 8px; }
+    label { font-size: 13px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+    .config-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    @media (max-width: 600px) { .config-row { grid-template-columns: 1fr; } }
+    .ctrl-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .ctrl-status { font-size: 14px; margin-top: 10px; padding: 9px 13px; border-radius: 6px; display: none; }
+    .ctrl-status.ok   { background: #e6f4ea; color: #1e7e34; display: block; }
+    .ctrl-status.warn { background: #fff3cd; color: #856404; display: block; }
+    .ctrl-status.err  { background: #fce8e8; color: #a32d2d; display: block; }
+    body.dark .ctrl-status.ok   { background: #1a3a24; color: #4caf70; }
+    body.dark .ctrl-status.warn { background: #3a2e00; color: #e6b030; }
+    body.dark .ctrl-status.err  { background: #3a1a1a; color: #e06060; }
+    .banner { font-size: 14px; padding: 11px 15px; border-radius: 8px; margin-bottom: 14px; background: #e8f0fe; color: #1a56db; border: 1px solid #b0c8f8; display: flex; align-items: center; gap: 8px; }
+    body.dark .banner { background: #1a2a4a; color: #6a9adf; border-color: #2a4a80; }
+    /* refresh group */
+    .refresh-group { display: flex; gap: 3px; align-items: center; }
+    .refresh-opt { padding: 5px 11px; font-size: 13px; }
+    .refresh-opt.active { background: #1a56db; color: #fff; border-color: #1a56db; }
+    body.dark .refresh-opt.active { background: #2a5adf; border-color: #2a5adf; color: #fff; }
+    /* log viewer */
+    .log-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; }
+    .log-modal-box { position: absolute; top: 4vh; left: 4vw; background: var(--bg-card); border-radius: 12px; padding: 20px; width: 92vw; height: 88vh; min-width: 400px; min-height: 300px; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,.3); resize: both; overflow: hidden; }
+    .log-modal-header { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; cursor: move; user-select: none; }
+    .log-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .log-pre { background: #111; color: #d4d4d4; border-radius: 8px; padding: 14px 16px; font-family: monospace; font-size: 16px; line-height: 1.7; flex: 1; overflow-y: auto; white-space: pre-wrap; word-break: break-all; min-height: 0; }
+    select { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 9px; font-size: 14px; cursor: pointer; }
+    /* workers table */
+    .workers-table { width: 100%; font-size: 14px; border-collapse: collapse; }
+    .workers-table th { color: var(--text-muted); font-size: 13px; text-align: left; padding: 7px 10px; border-bottom: 2px solid var(--border); font-weight: 600; }
+    .workers-table td { padding: 9px 10px; border-bottom: 1px solid var(--border-row); }
+    .workers-table tr:last-child td { border-bottom: none; }
+    .workers-table tbody tr:hover td { background: var(--bg-metric); }
+    /* sparkline */
+    .sparkline { display: inline-block; vertical-align: middle; opacity: .85; }
+    /* modal */
+    .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .modal-box { background: var(--bg-card); border-radius: 12px; padding: 24px; max-width: 520px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+    .modal-title { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
+    .modal-cmd { background: var(--bg-metric); border-radius: 6px; padding: 12px; font-family: monospace; font-size: 14px; word-break: break-all; margin-bottom: 12px; }
+    .modal-close { float: right; }
+  </style>
+</head>
+<body>
+
+<div id="file-banner" class="banner" style="display:none;">
+  <i class="ti ti-info-circle"></i>
+  <span>Opened as a local file &mdash; RPC calls may be blocked by the browser (CORS). For full functionality, run <strong>blockdag-dashboard-server.py</strong> and open <strong>http://localhost:8765</strong></span>
+</div>
+
+<div class="toolbar">
+  <h1><i class="ti ti-activity"></i> BlockDAG node monitor</h1>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+  <div style="display:flex;gap:4px;">
+    <button id="view-basic-btn" onclick="switchView('basic')" style="padding:6px 18px;font-size:14px;"><i class="ti ti-layout-sidebar-left-collapse"></i> Basic</button>
+    <button id="view-adv-btn"   onclick="switchView('adv')"   style="padding:6px 18px;font-size:14px;"><i class="ti ti-layout-dashboard"></i> Advanced</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <span class="ts" id="bd-ts">Never refreshed</span>
+    <div class="refresh-group">
+      <span style="font-size:13px;color:var(--text-muted);white-space:nowrap;">Auto:</span>
+      <button class="refresh-opt" data-s="5"  onclick="setRefresh(5)">5s</button>
+      <button class="refresh-opt" data-s="10" onclick="setRefresh(10)">10s</button>
+      <button class="refresh-opt active" data-s="30" onclick="setRefresh(30)">30s</button>
+      <button class="refresh-opt" data-s="60" onclick="setRefresh(60)">60s</button>
+      <button class="refresh-opt" data-s="0"  onclick="setRefresh(0)">Off</button>
+    </div>
+    <button onclick="fetchAll()"><i class="ti ti-refresh"></i> Refresh</button>
+    <button onclick="openConfigModal()" title="Configuration"><i class="ti ti-settings"></i> Config</button>
+    <button onclick="toggleDark()" id="dark-btn" title="Toggle dark mode"><i class="ti ti-moon" id="dark-icon"></i></button>
+  </div>
+</div>
+
+<!-- -- Basic view ----------------------------------------------------------- -->
+<div id="basic-view" style="display:none;max-width:520px;">
+
+  <!-- Peers -->
+  <div class="metric" style="margin-bottom:10px;">
+    <div class="metric-label"><i class="ti ti-users"></i> Peers</div>
+    <div style="margin-left:auto;text-align:right;min-width:0;">
+      <div class="metric-value" id="bv-m-peers">&mdash;</div>
+      <div class="metric-sub">Connected</div>
+    </div>
+  </div>
+
+  <!-- Chain Height -->
+  <div class="metric" style="margin-bottom:10px;">
+    <div class="metric-label"><i class="ti ti-cube"></i> Chain Height</div>
+    <div style="margin-left:auto;text-align:right;min-width:0;">
+      <div class="metric-value" id="bv-m-blocks" style="font-size:15px;">&mdash;</div>
+      <div class="metric-sub">Total blocks</div>
+    </div>
+  </div>
+
+  <!-- Node 1 status -->
+  <div class="section" style="margin-bottom:10px;">
+    <p class="section-title"><i class="ti ti-server"></i> Node 1 <span style="font-weight:400;color:var(--text-sub);">(primary)</span></p>
+    <div id="bv-n1-sync-badge" style="margin-bottom:8px;"><span class="badge badge-warn">Checking...</span></div>
+    <div class="row" style="padding:7px 0;">
+      <span class="row-label"><i class="ti ti-cube"></i> Block</span>
+      <span class="row-value" id="bv-n1-height">&mdash;</span>
+    </div>
+    <div class="row" style="padding:7px 0;">
+      <span class="row-label"><i class="ti ti-clock-hour-9"></i> Behind</span>
+      <span class="row-value" id="bv-n1-age">&mdash;</span>
+    </div>
+    <div class="row" style="padding:7px 0;">
+      <span class="row-label"><i class="ti ti-fingerprint"></i> Node ID</span>
+      <span class="row-value" style="display:flex;align-items:center;gap:6px;">
+        <span id="bv-n1-nodeid" title="" style="cursor:help;overflow:visible;">&mdash;</span>
+        <button id="bv-load-nodeid-btn" onclick="fetchNodeId()" title="Scan startup log for node ID" style="font-size:11px;padding:2px 7px;"><i class="ti ti-fingerprint"></i> Load ID</button>
+      </span>
+    </div>
+    <div class="row" style="padding:7px 0;border-bottom:none;">
+      <span class="row-label"><i class="ti ti-clock"></i> Uptime</span>
+      <span class="row-value" id="bv-n1-uptime">&mdash;</span>
+    </div>
+  </div>
+
+  <!-- Node control -->
+  <div class="section" style="margin-bottom:0;">
+    <p class="section-title"><i class="ti ti-terminal-2"></i> Node control</p>
+    <div class="ctrl-row">
+      <button class="btn-green"  onclick="nodeAction('start')">  <i class="ti ti-player-play"></i>  Start</button>
+      <button class="btn-red"    onclick="nodeAction('stop')">   <i class="ti ti-player-stop"></i>  Stop</button>
+      <button class="btn-blue"   onclick="nodeAction('restart')"><i class="ti ti-refresh"></i>       Reboot</button>
+    </div>
+    <div class="ctrl-row" style="margin-top:8px;">
+      <button onclick="openLogs('bdag-miner-node-1')"><i class="ti ti-terminal-2"></i> Node 1 logs</button>
+      <button onclick="openLogs('bdag-miner-node-2')"><i class="ti ti-terminal-2"></i> Node 2 logs</button>
+      <button onclick="openLogs('asic-pool')">        <i class="ti ti-terminal-2"></i> Pool logs</button>
+    </div>
+    <div class="ctrl-status" id="bv-ctrl-status"></div>
+  </div>
+
+</div>
+<!-- -- Advanced view -------------------------------------------------------- -->
+<div id="adv-view">
+
+
+<div class="grid">
+  <div class="metric">
+    <div class="metric-label"><i class="ti ti-cube"></i> Blocks</div>
+    <div style="margin-left:auto;text-align:right;min-width:0;">
+      <div class="metric-value" id="m-blocks" style="font-size:15px;">&mdash;</div>
+      <div class="metric-sub">Chain height</div>
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label"><i class="ti ti-users"></i> Peers</div>
+    <div style="margin-left:auto;text-align:right;min-width:0;">
+      <div class="metric-value" id="m-peers">&mdash;</div>
+      <div class="metric-sub">Connected</div>
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label"><i class="ti ti-tag"></i> Version</div>
+    <div style="margin-left:auto;text-align:right;min-width:0;">
+      <div class="metric-value" id="m-version" style="font-size:14px;">&mdash;</div>
+      <div class="metric-sub">Node image</div>
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label"><i class="ti ti-bolt"></i> Pool hashrate</div>
+    <div style="margin-left:auto;text-align:right;min-width:0;">
+      <div class="metric-value" id="m-hashrate">&mdash;</div>
+      <div class="metric-sub">MH/s</div>
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label"><i class="ti ti-database"></i> Chain data</div>
+    <div style="margin-left:auto;text-align:right;min-width:0;">
+      <div class="metric-value" id="m-diskdata">&mdash;</div>
+      <div class="metric-sub" id="m-diskfree">&mdash;</div>
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label"><i class="ti ti-coin"></i> Balance</div>
+    <div style="margin-left:auto;text-align:right;min-width:0;">
+      <div class="metric-value" id="m-balance">&mdash;</div>
+      <div class="metric-sub">BDAG</div>
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label"><i class="ti ti-trending-up"></i> BDAG price</div>
+    <div style="margin-left:auto;text-align:right;min-width:0;">
+      <div class="metric-value" id="m-price">&mdash;</div>
+      <div class="metric-sub">USD</div>
+    </div>
+  </div>
+</div>
+
+<!-- Two-column row: [Node 1 + Node 2 + Chain info] | [Pool stats] -->
+<div id="node-panels-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:start;">
+
+  <!-- Left: combined nodes card -->
+  <div class="section" style="margin-bottom:0;">
+    <p class="section-title"><i class="ti ti-server-2"></i> Nodes</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+      <!-- Node 1 -->
+      <div style="background:var(--bg-metric);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
+          <i class="ti ti-server"></i> Node 1 <span style="font-weight:400;color:var(--text-sub);">(primary)</span>
+        </div>
+        <div id="n1-sync-badge" style="margin-bottom:6px;"><span class="badge badge-warn">Checking...</span></div>
+        <div class="row" style="padding:5px 0;">
+          <span class="row-label"><i class="ti ti-cube"></i> Block</span>
+          <span class="row-value" id="n1-height">&mdash;</span>
+        </div>
+        <div class="row" style="padding:5px 0;">
+          <span class="row-label"><i class="ti ti-clock-hour-9"></i> Behind</span>
+          <span class="row-value" id="n1-age">&mdash;</span>
+        </div>
+        <div class="row" style="padding:5px 0;">
+          <span class="row-label"><i class="ti ti-fingerprint"></i> Node ID</span>
+          <span class="row-value" style="display:flex;align-items:center;gap:6px;">
+            <span id="n1-nodeid" title="" style="cursor:help;overflow:visible;">&mdash;</span>
+            <button id="adv-load-nodeid-btn" onclick="fetchNodeId()" title="Scan startup log for node ID" style="font-size:11px;padding:2px 7px;"><i class="ti ti-fingerprint"></i> Load ID</button>
+          </span>
+        </div>
+        <div class="row" style="padding:5px 0;border-bottom:none;">
+          <span class="row-label"><i class="ti ti-clock"></i> Uptime</span>
+          <span class="row-value" id="n1-uptime">&mdash;</span>
+        </div>
+      </div>
+      <!-- Node 2 -->
+      <div style="background:var(--bg-metric);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
+          <i class="ti ti-server"></i> Node 2 <span style="font-weight:400;color:var(--text-sub);">(backup)</span>
+        </div>
+        <div id="n2-sync-badge" style="margin-bottom:6px;"><span class="badge badge-warn">Checking...</span></div>
+        <div class="row" style="padding:5px 0;">
+          <span class="row-label"><i class="ti ti-cube"></i> Block</span>
+          <span class="row-value" id="n2-height">&mdash;</span>
+        </div>
+        <div class="row" style="padding:5px 0;">
+          <span class="row-label"><i class="ti ti-clock-hour-9"></i> Behind</span>
+          <span class="row-value" id="n2-age">&mdash;</span>
+        </div>
+        <div class="row" style="padding:5px 0;">
+          <span class="row-label"><i class="ti ti-fingerprint"></i> Node ID</span>
+          <span class="row-value" style="display:flex;align-items:center;gap:6px;">
+            <span id="n2-nodeid" title="" style="cursor:help;overflow:visible;">&mdash;</span>
+          </span>
+        </div>
+        <div class="row" style="padding:5px 0;border-bottom:none;">
+          <span class="row-label"><i class="ti ti-clock"></i> Uptime</span>
+          <span class="row-value" id="n2-uptime">&mdash;</span>
+        </div>
+      </div>
+    </div>
+    <!-- Chain info -->
+    <div class="row">
+      <span class="row-label"><i class="ti ti-network"></i> Network</span>
+      <span class="row-value" id="m-network">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-hash"></i> Best block hash</span>
+      <span class="row-value" id="s-hash" title="">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-chart-bar"></i> Difficulty</span>
+      <span class="row-value" id="s-difficulty">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-adjustments-horizontal"></i> Pool difficulty</span>
+      <span class="row-value" id="s-pool-diff">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-clock-bolt"></i> Avg block time</span>
+      <span class="row-value" id="s-blocktime">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-layers-difference"></i> Mempool</span>
+      <span class="row-value" id="s-mempool">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-git-branch"></i> Node divergence</span>
+      <span id="s-divergence"><span class="badge badge-warn">&mdash;</span></span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-clock"></i> Page uptime</span>
+      <span class="row-value" id="s-uptime">&mdash;</span>
+    </div>
+  </div>
+
+  <!-- Right: Pool stats card -->
+  <div class="section" style="margin-bottom:0;">
+    <p class="section-title"><i class="ti ti-pickaxe"></i> Pool stats</p>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-activity"></i> Pool status</span>
+      <span id="p-health"><span class="badge badge-warn">Checking...</span></span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-users"></i> Active miners (24h)</span>
+      <span class="row-value" id="p-miners">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-bolt"></i> Pool hashrate</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="sparkline" id="p-hashrate-spark"></div>
+        <span class="row-value" id="p-hashrate">&mdash;</span>
+      </div>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-checks"></i> Shares (last hr)</span>
+      <span class="row-value" id="p-shares">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-calendar-stats"></i> Blocks today</span>
+      <span class="row-value" id="p-blocks-today">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-clock"></i> Round duration</span>
+      <span class="row-value" id="p-round">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-cube-plus"></i> Blocks found</span>
+      <span class="row-value" id="p-blocks-total">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-circle-check"></i> Mature / Pending / Orphaned</span>
+      <span class="row-value" id="p-blocks-breakdown">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-coin"></i> Total reward earned</span>
+      <span class="row-value" id="p-total-reward">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-hourglass"></i> Pending payout</span>
+      <span class="row-value" id="p-pending">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-send"></i> Total paid out</span>
+      <span class="row-value" id="p-paid">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-calendar-stats"></i> Est. daily earnings</span>
+      <span class="row-value" id="p-est-daily">&mdash;</span>
+    </div>
+    <div class="row">
+      <span class="row-label"><i class="ti ti-calendar-week"></i> Est. weekly earnings</span>
+      <span class="row-value" id="p-est-weekly">&mdash;</span>
+    </div>
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-row);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-size:14px;color:var(--text-muted);">Min payout:</span>
+      <input type="number" id="payout-min" min="0.001" step="0.001" value="1" style="width:90px;margin-bottom:0;" />
+      <span style="font-size:14px;color:var(--text-muted);">BDAG</span>
+      <button class="btn-blue" onclick="savePayoutConfig()"><i class="ti ti-device-floppy"></i> Save</button>
+      <span id="payout-status" style="font-size:13px;color:var(--text-sub);"></span>
+    </div>
+    <div id="p-recent" style="margin-top:10px;display:none;">
+      <div style="font-size:12px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Recent blocks</div>
+      <div id="p-recent-rows"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="sections-grid">
+
+<div class="section">
+  <p class="section-title"><i class="ti ti-terminal-2"></i> Node control</p>
+  <div class="ctrl-row">
+    <button class="btn-green"  onclick="nodeAction('start')">  <i class="ti ti-player-play"></i>  Start</button>
+    <button class="btn-red"    onclick="nodeAction('stop')">   <i class="ti ti-player-stop"></i>  Stop</button>
+    <button class="btn-blue"   onclick="nodeAction('restart')"><i class="ti ti-refresh"></i>       Reboot</button>
+  </div>
+  <div class="ctrl-row" style="margin-top:8px;">
+    <button onclick="openLogs('bdag-miner-node-1')"><i class="ti ti-terminal-2"></i> Node 1 logs</button>
+    <button onclick="openLogs('bdag-miner-node-2')"><i class="ti ti-terminal-2"></i> Node 2 logs</button>
+    <button onclick="openLogs('asic-pool')">        <i class="ti ti-terminal-2"></i> Pool logs</button>
+  </div>
+  <div class="ctrl-status" id="ctrl-status"></div>
+</div>
+
+<div class="section">
+  <p class="section-title"><i class="ti ti-box"></i> Containers</p>
+  <div class="row" style="margin-bottom:6px;">
+    <span class="row-label"><i class="ti ti-switch"></i> HAProxy active backend</span>
+    <span id="haproxy-backend"><span class="badge badge-warn">&mdash;</span></span>
+  </div>
+  <div class="container-row"><span class="container-name">bdag-miner-node-1</span><div style="display:flex;align-items:center;gap:4px;"><span class="badge badge-warn" id="c-bdag-miner-node-1">&mdash;</span><button class="btn-green"  onclick="containerAction('start','bdag-miner-node-1')"   title="Start"   style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-play"></i></button><button class="btn-red"   onclick="containerAction('stop','bdag-miner-node-1')"    title="Stop"    style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-stop"></i></button><button class="btn-blue"  onclick="containerAction('restart','bdag-miner-node-1')" title="Restart" style="padding:3px 7px;font-size:12px;"><i class="ti ti-refresh"></i></button></div></div>
+  <div class="container-row"><span class="container-name">bdag-miner-node-2</span><div style="display:flex;align-items:center;gap:4px;"><span class="badge badge-warn" id="c-bdag-miner-node-2">&mdash;</span><button class="btn-green"  onclick="containerAction('start','bdag-miner-node-2')"   title="Start"   style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-play"></i></button><button class="btn-red"   onclick="containerAction('stop','bdag-miner-node-2')"    title="Stop"    style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-stop"></i></button><button class="btn-blue"  onclick="containerAction('restart','bdag-miner-node-2')" title="Restart" style="padding:3px 7px;font-size:12px;"><i class="ti ti-refresh"></i></button></div></div>
+  <div class="container-row"><span class="container-name">asic-pool</span>        <div style="display:flex;align-items:center;gap:4px;"><span class="badge badge-warn" id="c-asic-pool">&mdash;</span>        <button class="btn-green"  onclick="containerAction('start','asic-pool')"           title="Start"   style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-play"></i></button><button class="btn-red"   onclick="containerAction('stop','asic-pool')"            title="Stop"    style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-stop"></i></button><button class="btn-blue"  onclick="containerAction('restart','asic-pool')"         title="Restart" style="padding:3px 7px;font-size:12px;"><i class="ti ti-refresh"></i></button></div></div>
+  <div class="container-row"><span class="container-name">rpc-failover</span>     <div style="display:flex;align-items:center;gap:4px;"><span class="badge badge-warn" id="c-rpc-failover">&mdash;</span>     <button class="btn-green"  onclick="containerAction('start','rpc-failover')"         title="Start"   style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-play"></i></button><button class="btn-red"   onclick="containerAction('stop','rpc-failover')"          title="Stop"    style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-stop"></i></button><button class="btn-blue"  onclick="containerAction('restart','rpc-failover')"       title="Restart" style="padding:3px 7px;font-size:12px;"><i class="ti ti-refresh"></i></button></div></div>
+  <div class="container-row"><span class="container-name">pool-db</span>          <div style="display:flex;align-items:center;gap:4px;"><span class="badge badge-warn" id="c-pool-db">&mdash;</span>          <button class="btn-green"  onclick="containerAction('start','pool-db')"             title="Start"   style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-play"></i></button><button class="btn-red"   onclick="containerAction('stop','pool-db')"              title="Stop"    style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-stop"></i></button><button class="btn-blue"  onclick="containerAction('restart','pool-db')"           title="Restart" style="padding:3px 7px;font-size:12px;"><i class="ti ti-refresh"></i></button></div></div>
+  <p class="note" id="container-note" style="display:none;">Container status requires the dashboard server. Run <strong>blockdag-dashboard-server.py</strong> and open http://localhost:8765</p>
+</div>
+
+<div class="section">
+  <p class="section-title"><i class="ti ti-cpu"></i> Resources</p>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-server"></i> bdag-miner-node-1</span>
+    <span class="row-value" id="r-mem-node1">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-server"></i> bdag-miner-node-2</span>
+    <span class="row-value" id="r-mem-node2">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-wave-sine"></i> asic-pool</span>
+    <span class="row-value" id="r-mem-pool">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-database"></i> pool-db</span>
+    <span class="row-value" id="r-mem-db">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-database-import"></i> Docker volumes</span>
+    <span class="row-value" id="r-vol-size">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-network"></i> node-1 net I/O</span>
+    <span class="row-value" id="r-net-node1">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-network"></i> node-2 net I/O</span>
+    <span class="row-value" id="r-net-node2">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-network"></i> pool net I/O</span>
+    <span class="row-value" id="r-net-pool">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-device-floppy"></i> Backup drive free</span>
+    <span id="r-backup-disk"><span class="badge badge-warn">&mdash;</span></span>
+  </div>
+</div>
+
+<div class="section">
+  <p class="section-title"><i class="ti ti-world"></i> Machine</p>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-globe"></i> Public IP</span>
+    <span class="row-value" id="m-pubip">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-network"></i> Local IP</span>
+    <span class="row-value" id="m-localip">&mdash;</span>
+  </div>
+</div>
+
+<div class="section">
+  <p class="section-title"><i class="ti ti-wallet"></i> Wallet</p>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-id"></i> Mining address</span>
+    <span class="wallet" id="w-addr">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-coin"></i> Balance</span>
+    <span class="row-value" id="w-balance">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-trending-up"></i> BDAG price</span>
+    <span class="row-value" id="w-price">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-currency-dollar"></i> USD value</span>
+    <span class="row-value" id="w-usd">&mdash;</span>
+  </div>
+</div>
+
+<div class="section">
+  <p class="section-title"><i class="ti ti-bell"></i> Alerts</p>
+  <p class="note" style="margin-bottom:12px;">Get notified on Discord, Telegram, or your browser when the pool freezes or peer count drops.</p>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-row);">
+    <button id="notif-btn" onclick="toggleNotifications()"><i class="ti ti-bell" id="notif-icon"></i> <span id="notif-label">Enable browser alerts</span></button>
+    <span id="notif-status" style="font-size:13px;color:var(--text-sub);"></span>
+  </div>
+
+  <label>Discord webhook URL</label>
+  <input type="text" id="al-discord" placeholder="https://discord.com/api/webhooks/..." />
+
+  <label>Telegram bot token</label>
+  <input type="text" id="al-tg-token" placeholder="123456789:AABBccdd..." />
+
+  <label>Telegram chat ID</label>
+  <input type="text" id="al-tg-chat" placeholder="-1001234567890" />
+
+  <label>Low-peer alert threshold</label>
+  <input type="number" id="al-peer-thr" min="1" max="50" value="5"
+         style="width:90px;margin-bottom:12px;" />
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
+      <input type="checkbox" id="al-freeze-chk" checked /> Freeze alerts
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
+      <input type="checkbox" id="al-peer-chk" checked /> Peer-count alerts
+    </label>
+  </div>
+
+  <label>Low-peer divergence threshold (blocks)</label>
+  <input type="number" id="al-div-thr" min="1" max="1000" value="10"
+         style="width:90px;margin-bottom:12px;" />
+
+  <label>Disk % alert threshold</label>
+  <input type="number" id="al-disk-thr" min="1" max="99" value="15"
+         style="width:90px;margin-bottom:12px;" />
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn-blue" onclick="saveAlertConfig()"><i class="ti ti-device-floppy"></i> Save</button>
+    <button class="btn-orange" onclick="testAlert()"><i class="ti ti-send"></i> Send test</button>
+  </div>
+  <div class="ctrl-status" id="al-status"></div>
+
+  <!-- Alert History subsection -->
+  <div style="margin-top:14px;border-top:1px solid var(--border-row);padding-top:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleAlertHistory()">
+      <span style="font-size:13px;font-weight:500;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;">Alert History</span>
+      <i class="ti ti-chevron-down" id="alert-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+    </div>
+    <div id="alert-history-body" style="display:none;margin-top:10px;">
+      <div style="overflow-x:auto;">
+        <table class="workers-table" id="alert-history-table">
+          <thead><tr><th>Time</th><th>Message</th></tr></thead>
+          <tbody id="alert-history-tbody">
+            <tr><td colspan="2" style="color:var(--text-sub);padding:10px;">No history yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="section-title"><i class="ti ti-database-export"></i> Backup</p>
+
+  <!-- Schedule 1 -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 4px;">
+    <p style="font-size:12px;font-weight:600;color:#555;margin:0;">Schedule 1</p>
+    <button id="bk1-toggle-btn" data-enabled="true" onclick="toggleBackupEnabled(1)" class="btn-green" style="font-size:12px;padding:3px 10px;">
+      <i class="ti ti-check"></i> Enabled
+    </button>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-clock"></i> Last backup</span>
+    <span class="row-value" id="bk1-last">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-calendar"></i> Next scheduled</span>
+    <span class="row-value" id="bk1-next">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-refresh"></i> Run every</span>
+    <span style="display:flex;align-items:center;gap:8px;">
+      <input type="number" id="bk1-value" min="1" max="999" step="1" value="1"
+             style="width:60px;margin-bottom:0;" />
+      <select id="bk1-unit" style="margin-bottom:0;">
+        <option value="hours">Hours</option>
+        <option value="days">Days</option>
+        <option value="weeks">Weeks</option>
+        <option value="months">Months</option>
+      </select>
+      <button class="btn-blue" onclick="applyBackupSchedule(1)" id="bk1-apply-btn">
+        <i class="ti ti-check"></i> Apply
+      </button>
+    </span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-copy"></i> Keep copies</span>
+    <span style="display:flex;align-items:center;gap:8px;">
+      <input type="number" id="bk1-retain" min="1" max="999" step="1" value="12"
+             style="width:60px;margin-bottom:0;" />
+      <button class="btn-blue" onclick="saveBackupRetention(1)" id="bk1-retain-btn">
+        <i class="ti ti-check"></i> Apply
+      </button>
+    </span>
+  </div>
+
+  <!-- Schedule 2 -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 4px;">
+    <p style="font-size:12px;font-weight:600;color:#555;margin:0;">Schedule 2</p>
+    <button id="bk2-toggle-btn" data-enabled="true" onclick="toggleBackupEnabled(2)" class="btn-green" style="font-size:12px;padding:3px 10px;">
+      <i class="ti ti-check"></i> Enabled
+    </button>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-clock"></i> Last backup</span>
+    <span class="row-value" id="bk2-last">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-calendar"></i> Next scheduled</span>
+    <span class="row-value" id="bk2-next">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-refresh"></i> Run every</span>
+    <span style="display:flex;align-items:center;gap:8px;">
+      <input type="number" id="bk2-value" min="1" max="999" step="1" value="1"
+             style="width:60px;margin-bottom:0;" />
+      <select id="bk2-unit" style="margin-bottom:0;">
+        <option value="hours">Hours</option>
+        <option value="days">Days</option>
+        <option value="weeks">Weeks</option>
+        <option value="months">Months</option>
+      </select>
+      <button class="btn-blue" onclick="applyBackupSchedule(2)" id="bk2-apply-btn">
+        <i class="ti ti-check"></i> Apply
+      </button>
+    </span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-copy"></i> Keep copies</span>
+    <span style="display:flex;align-items:center;gap:8px;">
+      <input type="number" id="bk2-retain" min="1" max="999" step="1" value="12"
+             style="width:60px;margin-bottom:0;" />
+      <button class="btn-blue" onclick="saveBackupRetention(2)" id="bk2-retain-btn">
+        <i class="ti ti-check"></i> Apply
+      </button>
+    </span>
+  </div>
+
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn-orange" onclick="backupNow()">
+      <i class="ti ti-database-export"></i> Backup now
+    </button>
+    <button class="btn-blue" onclick="runSetupTasks()" id="bk-setup-btn">
+      <i class="ti ti-settings"></i> Re-register Tasks
+    </button>
+    <button class="btn-blue" onclick="verifyBackup()" id="bk-verify-btn">
+      <i class="ti ti-shield-check"></i> Verify Last Backup
+    </button>
+  </div>
+  <div class="ctrl-status" id="bk-status"></div>
+  <div id="bk-verify-result" style="font-size:13px;color:var(--text-muted);margin-top:8px;display:none;"></div>
+</div>
+
+<div class="section">
+  <p class="section-title"><i class="ti ti-clock-play"></i> Maintenance</p>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-refresh"></i> Auto-restart enabled</span>
+    <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+      <input type="checkbox" id="maint-enabled" />
+      <span style="font-size:13px;color:var(--text-muted);">Enable scheduled restart</span>
+    </label>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-clock"></i> Restart time</span>
+    <input type="time" id="maint-time" value="03:00"
+           style="background:var(--bg-input);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:14px;" />
+  </div>
+  <div style="margin-top:10px;">
+    <label style="font-size:13px;color:var(--text-muted);margin-bottom:6px;display:block;">Days of week</label>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;" id="maint-days">
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Mon" checked /> Mon</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Tue" checked /> Tue</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Wed" checked /> Wed</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Thu" checked /> Thu</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Fri" checked /> Fri</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Sat" checked /> Sat</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Sun" checked /> Sun</label>
+    </div>
+  </div>
+  <div style="margin-top:10px;">
+    <label style="font-size:13px;color:var(--text-muted);margin-bottom:6px;display:block;">Containers to restart</label>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;" id="maint-containers">
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="bdag-miner-node-1" checked /> node-1</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="bdag-miner-node-2" checked /> node-2</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="asic-pool" checked /> asic-pool</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="rpc-failover" /> rpc-failover</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="pool-db" /> pool-db</label>
+    </div>
+  </div>
+  <div style="margin-top:12px;">
+    <button class="btn-blue" onclick="saveMaintenanceConfig()"><i class="ti ti-device-floppy"></i> Save</button>
+  </div>
+  <div class="ctrl-status" id="maint-status"></div>
+</div>
+
+</div><!-- end sections-grid -->
+
+<!-- Payout History section (full width, collapsible) -->
+<div class="section" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePayoutHistory()">
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-receipt"></i> Payout History</p>
+    <i class="ti ti-chevron-down" id="payout-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
+  </div>
+  <div id="payout-history-body" style="display:none;margin-top:14px;">
+    <div style="overflow-x:auto;">
+      <table class="workers-table">
+        <thead>
+          <tr>
+            <th>Address</th>
+            <th>Amount (BDAG)</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody id="payout-history-tbody">
+          <tr><td colspan="3" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Connected Peers (full width, collapsible) -->
+<div class="section" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleConnectedPeers()">
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-plug-connected"></i> Connected Peers <span id="connected-peers-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
+    <i class="ti ti-chevron-down" id="connected-peers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
+  </div>
+  <div id="connected-peers-body" style="display:none;margin-top:14px;">
+    <div style="overflow-x:auto;">
+      <table class="workers-table">
+        <thead>
+          <tr>
+            <th>Address</th>
+            <th>Direction</th>
+            <th>Connected</th>
+            <th>Height</th>
+            <th>Version</th>
+          </tr>
+        </thead>
+        <tbody id="connected-peers-tbody">
+          <tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:16px;">Expand to load</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <button class="btn-blue"  onclick="fetchConnectedPeers()"><i class="ti ti-refresh"></i> Refresh</button>
+      <button class="btn-green" onclick="importConnectedToPeerManager()"><i class="ti ti-file-import"></i> Import to Peer Manager</button>
+      <span id="connected-peers-ts" style="font-size:13px;color:var(--text-ts);"></span>
+      <span id="connected-import-status" style="font-size:13px;"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Peer Manager (full width, collapsible) -->
+<div class="section" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePeerManager()">
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-list-check"></i> Peer Manager <span id="peer-manager-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
+    <i class="ti ti-chevron-down" id="peer-manager-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
+  </div>
+  <div id="peer-manager-body" style="display:none;margin-top:14px;">
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+      Check the peers you want, then click <strong>Apply Selected</strong>. Peers are written as
+      <code style="font-size:12px;">--addpeer</code> flags in docker-compose.yml &mdash; restart nodes to connect.
+    </p>
+
+    <!-- Selection toolbar -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+      <button onclick="selectAllPeers(true)"  style="font-size:13px;padding:4px 10px;"><i class="ti ti-checkbox"></i> All</button>
+      <button onclick="selectAllPeers(false)" style="font-size:13px;padding:4px 10px;"><i class="ti ti-square"></i> None</button>
+      <span style="flex:1;"></span>
+      <button class="btn-green" onclick="addSelectedPeers()" id="peer-add-selected-btn" title="Apply only checked peers to docker-compose.yml"><i class="ti ti-file-check"></i> Apply Selected</button>
+      <button class="btn-green" onclick="addAllPeers()"      id="peer-add-btn"          title="Apply all peers in the list to docker-compose.yml"><i class="ti ti-file-settings"></i> Apply All</button>
+      <button class="btn-red"   onclick="clearPeerManagerList()" id="peer-clear-btn"     title="Clear all peers from the manager list (does not change docker-compose.yml)"><i class="ti ti-trash"></i> Clear</button>
+      <button class="btn-orange" onclick="loadPeers()"       id="peer-reload-btn"><i class="ti ti-refresh"></i> Reload</button>
+    </div>
+
+    <!-- Checkbox peer list -->
+    <div id="peer-manager-list"
+         style="max-height:280px;overflow-y:auto;border:1px solid var(--border);
+                border-radius:6px;background:var(--bg-metric);">
+      <div style="padding:16px;text-align:center;color:var(--text-sub);">Loading&hellip;</div>
+    </div>
+
+    <!-- Raw edit (collapsed by default) -->
+    <details style="margin-top:10px;">
+      <summary style="cursor:pointer;font-size:13px;color:var(--text-muted);padding:4px 0;user-select:none;">
+        <i class="ti ti-pencil" style="font-size:13px;"></i> Edit raw peer list
+      </summary>
+      <div style="margin-top:8px;">
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:6px;">
+          One multiaddr per line (<code style="font-size:11px;">/ip4/.../tcp/.../p2p/...</code>).
+          Seeded from <code style="font-size:11px;">dashboard/Network Peers.txt</code> on first load.
+        </p>
+        <textarea id="peer-manager-textarea"
+          style="width:100%;height:160px;font-family:monospace;font-size:13px;background:var(--bg-input);
+                 border:1px solid var(--border);color:var(--text);border-radius:6px;padding:10px;
+                 resize:vertical;line-height:1.6;box-sizing:border-box;"
+          placeholder="Loading..."></textarea>
+        <div style="margin-top:6px;">
+          <button class="btn-blue" onclick="savePeers()" id="peer-save-btn"><i class="ti ti-device-floppy"></i> Save list</button>
+        </div>
+      </div>
+    </details>
+
+    <!-- Auto-add -->
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-row);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;color:var(--text-muted);margin-bottom:0;">
+        <input type="checkbox" id="al-peer-auto-add" style="width:auto;margin:0;" />
+        Auto-add when peers are low
+      </label>
+      <span style="font-size:13px;color:var(--text-sub);">Last auto-add: <span id="peer-last-auto-add">&mdash;</span></span>
+    </div>
+    <div class="ctrl-status" id="peer-manager-status"></div>
+  </div>
+</div>
+
+<!-- Workers / Miners section (full width, collapsible) -->
+<div class="section" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleWorkers()">
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-users"></i> Workers / Miners</p>
+    <i class="ti ti-chevron-down" id="workers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
+  </div>
+  <div id="workers-body" style="display:none;margin-top:14px;">
+    <p class="note" id="workers-note" style="display:none;margin-bottom:8px;"></p>
+    <div style="overflow-x:auto;">
+      <table class="workers-table">
+        <thead>
+          <tr>
+            <th>Worker address</th>
+            <th>IP address</th>
+            <th>Worker name</th>
+            <th>Hashrate (10m)</th>
+            <th>Accepted</th>
+            <th>Rejected</th>
+            <th>Last seen</th>
+          </tr>
+        </thead>
+        <tbody id="workers-tbody">
+          <tr><td colspan="7" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</div><!-- /adv-view -->
+
+<!-- log viewer modal -->
+<div id="log-modal" class="log-modal-bg" style="display:none;" onclick="if(event.target===this)closeLogs()">
+  <div class="log-modal-box" id="log-modal-box">
+    <div class="log-modal-header" id="log-drag-handle">
+      <i class="ti ti-terminal-2" style="color:#666;"></i>
+      <strong style="font-size:14px;">Node Logs</strong>
+      <span style="font-size:11px;color:#999;margin-left:4px;">&mdash; drag to move, resize from corner</span>
+      <button onclick="closeLogs()" style="margin-left:auto;"><i class="ti ti-x"></i> Close</button>
+    </div>
+    <div class="log-toolbar">
+      <select id="log-container-sel" onchange="fetchLogs()">
+        <option value="bdag-miner-node-1">bdag-miner-node-1</option>
+        <option value="bdag-miner-node-2">bdag-miner-node-2</option>
+        <option value="asic-pool">asic-pool</option>
+        <option value="rpc-failover">rpc-failover</option>
+        <option value="pool-db">pool-db</option>
+      </select>
+      <select id="log-tail-sel" onchange="fetchLogs()">
+        <option value="50">50 lines</option>
+        <option value="150" selected>150 lines</option>
+        <option value="300">300 lines</option>
+        <option value="500">500 lines</option>
+      </select>
+      <button onclick="fetchLogs()"><i class="ti ti-refresh"></i> Refresh</button>
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;margin:0;cursor:pointer;">
+        <input type="checkbox" id="log-autoscroll" checked /> Auto-scroll
+      </label>
+    </div>
+    <pre id="log-pre" class="log-pre">Select a container and click Refresh.</pre>
+  </div>
+</div>
+
+<!-- modal for showing CLI commands when running as file:// -->
+<div id="modal" class="modal-bg" style="display:none;" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-cmd"   id="modal-cmd"></div>
+    <p style="font-size:12px;color:#999;margin-bottom:12px;">Copy and run this command in PowerShell.</p>
+    <button class="modal-close" onclick="closeModal()"><i class="ti ti-x"></i> Close</button>
+  </div>
+</div>
+
+<script>
+const startTime = Date.now();
+const IS_SERVER = location.protocol !== 'file:';
+
+if (!IS_SERVER) {
+  document.getElementById('file-banner').style.display = 'flex';
+  document.getElementById('container-note').style.display = 'block';
+}
+
+function cfg(id) { return document.getElementById(id).value.trim(); }
+
+function updatePgUrl() {
+  const user = cfg('cfg-pg-user');
+  const pass = cfg('cfg-pg-pass');
+  const db   = cfg('cfg-pg-db');
+  const el   = document.getElementById('cfg-pg-url');
+  if (el) el.value = 'postgres://' + user + ':' + pass + '@pool-db:5432/' + db;
+}
+['cfg-pg-user','cfg-pg-pass','cfg-pg-db'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', updatePgUrl);
+});
+
+// -- Config Modal -------------------------------------------------------------
+function openConfigModal() {
+  const overlay = document.getElementById('cfg-modal-overlay');
+  overlay.style.display = 'flex';
+  document.getElementById('cfg-status').className = 'ctrl-status';
+  fetch('/env/config').then(r => r.json()).then(data => {
+    const setv = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
+    setv('cfg-wallet',  data.MINING_ADDRESS);
+    setv('cfg-user',    data.NODE_RPC_USER);
+    setv('cfg-pass',    data.NODE_RPC_PASS);
+    setv('cfg-pg-user', data.POSTGRES_USER);
+    setv('cfg-pg-pass', data.POSTGRES_PASSWORD);
+    setv('cfg-pg-db',   data.POSTGRES_DB);
+    setv('cfg-pool-fee',  data.POOL_FEE_PERCENTAGE);
+    setv('cfg-pool-diff', data.POOL_STARTING_PDIFF);
+    if (data.POOL_STARTING_PDIFF != null) set('s-pool-diff', data.POOL_STARTING_PDIFF);
+    setv('cfg-pool-port', data.POOL_PORT);
+    setv('cfg-pool-pass', data.BDAG_MINER_POOL_PASSWORD);
+    updatePgUrl();
+  }).catch(() => {});
+}
+
+function closeConfigModal() {
+  document.getElementById('cfg-modal-overlay').style.display = 'none';
+}
+
+async function applyConfig() {
+  const btn = document.getElementById('cfg-apply-btn');
+  const st  = document.getElementById('cfg-status');
+  btn.disabled = true;
+  st.className = 'ctrl-status';
+  try {
+    const body = {
+      MINING_ADDRESS:          cfg('cfg-wallet'),
+      NODE_RPC_USER:           cfg('cfg-user'),
+      NODE_RPC_PASS:           cfg('cfg-pass'),
+      POSTGRES_USER:           cfg('cfg-pg-user'),
+      POSTGRES_PASSWORD:       cfg('cfg-pg-pass'),
+      POSTGRES_DB:             cfg('cfg-pg-db'),
+      POOL_FEE_PERCENTAGE:     cfg('cfg-pool-fee'),
+      POOL_STARTING_PDIFF:     cfg('cfg-pool-diff'),
+      POOL_PORT:               cfg('cfg-pool-port'),
+      BDAG_MINER_POOL_PASSWORD: cfg('cfg-pool-pass'),
+    };
+    const r = await fetch('/env/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (j.ok) {
+      st.textContent = 'Settings saved. Stack is restarting — this takes about 15 seconds.';
+      st.className = 'ctrl-status ok';
+    } else {
+      st.textContent = 'Error: ' + (j.error || 'Unknown error');
+      st.className = 'ctrl-status err';
+    }
+  } catch (e) {
+    st.textContent = 'Failed to connect to dashboard server.';
+    st.className = 'ctrl-status err';
+  }
+  btn.disabled = false;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  updatePgUrl();
+  const overlay = document.getElementById('cfg-modal-overlay');
+  if (overlay) overlay.addEventListener('click', function(e) {
+    if (e.target === this) closeConfigModal();
+  });
+});
+function set(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+function fmtDifficulty(n) {
+  if (typeof n !== 'number' || isNaN(n)) return String(n);
+  const full = Math.round(n).toLocaleString();
+  let compact;
+  if      (n >= 1e12) compact = (n / 1e12).toFixed(2) + ' T';
+  else if (n >= 1e9)  compact = (n / 1e9) .toFixed(2) + ' B';
+  else if (n >= 1e6)  compact = (n / 1e6) .toFixed(1) + ' M';
+  else if (n >= 1e3)  compact = (n / 1e3) .toFixed(1) + ' K';
+  else                compact = full;
+  return compact === full ? full : compact + ' (' + full + ')';
+}
+function setTitle(id, val) { const el = document.getElementById(id); if (el) el.title = val; }
+function badge(id, text, type) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = `<span class="badge badge-${type}">${text}</span>`;
+}
+function showModal(title, cmd) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-cmd').textContent   = cmd;
+  document.getElementById('modal').style.display     = 'flex';
+}
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+function shortNodeId(id) {
+  if (!id || id.length <= 20) return id;
+  return id.slice(0, 8) + '.......' + id.slice(-6);
+}
+function copyNodeId(id, btn) {
+  navigator.clipboard.writeText(id).then(() => {
+    const icon = btn.querySelector('i');
+    icon.className = 'ti ti-check';
+    setTimeout(() => { icon.className = 'ti ti-copy'; }, 2000);
+  }).catch(() => {
+    prompt('Copy node ID:', id);
+  });
+}
+
+function ctrlStatus(msg, type) {
+  for (const id of ['ctrl-status', 'bv-ctrl-status']) {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = msg; el.className = 'ctrl-status ' + type; }
+  }
+}
+
+function switchView(mode) {
+  const isBasic = mode === 'basic';
+  document.getElementById('basic-view').style.display = isBasic ? '' : 'none';
+  document.getElementById('adv-view').style.display   = isBasic ? 'none' : '';
+  document.getElementById('view-basic-btn').className =
+    isBasic ? 'btn-blue' : '';
+  document.getElementById('view-adv-btn').className =
+    isBasic ? '' : 'btn-blue';
+  try { localStorage.setItem('bdag-view', mode); } catch(e) {}
+}
+
+async function rpc(method, params = []) {
+  const user     = cfg('cfg-user');
+  const pass     = cfg('cfg-pass');
+  const endpoint = IS_SERVER ? '/rpc' : cfg('cfg-rpc');
+  const headers  = { 'Content-Type': 'application/json' };
+  if (user) headers['Authorization'] = 'Basic ' + btoa(user + ':' + pass);
+  const r = await fetch(endpoint, {
+    method: 'POST', headers,
+    body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 })
+  });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message);
+  return j.result;
+}
+
+async function evm(method, params = []) {
+  const r = await fetch('/evm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 })
+  });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message);
+  return j.result;
+}
+
+// -- Metrics -------------------------------------------------------------------
+
+async function fetchBlockHeight() {
+  try {
+    const count = await rpc('getBlockCount');
+    set('m-height', Number(count).toLocaleString());
+  } catch(e) { set('m-height', 'Error'); }
+}
+
+async function fetchNetworkAndPeers() {
+  try {
+    // {totalconnected, totalpeers, maxconnected, infos:[{name, connecteds, peers}]}
+    const info  = await rpc('getNetworkInfo');
+    const peers = info.totalconnected ?? info.infos?.[0]?.connecteds ?? 0;
+    set('m-peers', peers);
+    const chain = info.infos?.[0]?.name ?? '?';
+    set('m-network', chain);
+    if (!IS_SERVER) {
+      badge('s-sync', peers > 0 ? 'Active' : 'No peers', peers > 0 ? 'ok' : 'warn');
+      set('m-sync', peers + ' connected');
+    }
+    // Low-peer browser notification
+    const threshold = parseInt(document.getElementById('al-peer-thr')?.value || '5');
+    if (_lastPeerCount !== null && _lastPeerCount >= threshold && peers < threshold)
+      browserNotify('BlockDAG Low Peers', `Only ${peers} peers connected (threshold: ${threshold}).`);
+    _lastPeerCount = peers;
+  } catch(e) {
+    set('m-peers', 'Error'); set('m-network', 'Error');
+    badge('s-sync', 'RPC unavailable', 'err');
+  }
+}
+
+async function fetchSyncState() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/syncstate');
+    const j = await r.json();
+    if (j.error) { badge('s-sync', 'Unknown', 'warn'); return; }
+
+    // Overall sync status badge
+    if (j.synced) {
+      badge('s-sync', 'Synced', 'ok');
+    } else if (j.pct !== null && j.pct !== undefined) {
+      badge('s-sync', `Syncing ${j.pct}%`, j.pct >= 99 ? 'ok' : 'warn');
+    } else {
+      badge('s-sync', 'Catching up', 'warn');
+    }
+
+    // Network, peer count, version, and chain height from server-side RPC
+    if (j.network) set('m-network', j.network);
+    if (j.total_peers != null) {
+      set('m-peers', j.total_peers);
+      set('bv-m-peers', j.total_peers);
+    }
+    if (j.cur_height != null) {
+      set('m-blocks',    j.cur_height.toLocaleString());
+      set('bv-m-blocks', j.cur_height.toLocaleString());
+    }
+    const ver = j.node1?.version;
+    if (ver) set('m-version', ver.length > 16 ? ver.slice(0, 16) + '...' : ver);
+
+    // Per-node panel renderer ? also mirrors data into basic-view (bv-) elements for node 1
+    function renderNodePanel(prefix, n) {
+      if (!n) return;
+      const c = n.cur_height;
+      set(prefix + '-height', c ? c.toLocaleString() : '?');
+
+      const ageEl = document.getElementById(prefix + '-age');
+      if (ageEl) {
+        if (n.synced) ageEl.textContent = 'Up to date';
+        else if (n.age_str) ageEl.textContent = n.age_str + ' behind';
+        else ageEl.textContent = '?';
+      }
+
+      const nidEl = document.getElementById(prefix + '-nodeid');
+      if (nidEl && n.node_id) {
+        nidEl.title = n.node_id;
+        nidEl.innerHTML =
+          `<span style="cursor:help;" title="${n.node_id}">${shortNodeId(n.node_id)}</span>` +
+          `<button onclick="copyNodeId('${n.node_id}', this)" title="Copy full node ID"
+            style="margin-left:6px;padding:1px 6px;font-size:11px;vertical-align:middle;">
+            <i class="ti ti-copy"></i></button>`;
+      }
+
+      if (n.uptime) set(prefix + '-uptime', n.uptime);
+      if (n.version) set(prefix + '-version', n.version);
+
+      if (n.error)               badge(prefix + '-sync-badge', 'Error', 'err');
+      else if (n.synced)         badge(prefix + '-sync-badge', 'Synced', 'ok');
+      else if (n.pct != null) {
+        const type = n.pct >= 99 ? 'ok' : 'warn';
+        badge(prefix + '-sync-badge', `Syncing ${n.pct}%`, type);
+      } else                     badge(prefix + '-sync-badge', 'Catching up', 'warn');
+    }
+    renderNodePanel('n1', j.node1);
+    renderNodePanel('n2', j.node2);
+    // Mirror node 1 into basic-view panel
+    renderNodePanel('bv-n1', j.node1);
+
+    // Divergence from the heights we already have ? no separate call needed
+    const h1 = j.node1?.cur_height ?? 0;
+    const h2 = j.node2?.cur_height ?? 0;
+    if (h1 || h2) {
+      const diff  = Math.abs(h1 - h2);
+      const label = `${h1.toLocaleString()} vs ${h2.toLocaleString()} (&Delta;${diff})`;
+      const type  = diff <= 10 ? 'ok' : diff <= 50 ? 'warn' : 'err';
+      badge('s-divergence', label, type);
+    }
+  } catch(e) { /* keep whatever fetchNetworkAndPeers set */ }
+}
+
+async function fetchBestBlock() {
+  try {
+    const hash = await rpc('getBestBlockHash');
+    set('s-hash', hash ? hash.slice(0, 20) + '...' : '?');
+    setTitle('s-hash', hash || '');
+  } catch(e) { set('s-hash', '?'); }
+}
+
+async function fetchNodeId(force) {
+  if (!IS_SERVER) return;
+  const loadBtns = ['bv-load-nodeid-btn', 'adv-load-nodeid-btn'].map(id => document.getElementById(id)).filter(Boolean);
+  loadBtns.forEach(b => { b.disabled = true; b.innerHTML = '<i class="ti ti-loader-2"></i> Scanning...'; });
+  try {
+    const url = force ? '/nodeid?force=1' : '/nodeid';
+    const r = await fetch(url);
+    const j = await r.json();
+    const pairs = [
+      [j.id,  ['n1-nodeid', 'bv-n1-nodeid']],
+      [j.id2, ['n2-nodeid']],
+    ];
+    let anyFound = false;
+    pairs.forEach(([id, elIds]) => {
+      if (!id) return;
+      anyFound = true;
+      elIds.forEach(elId => {
+        const el = document.getElementById(elId);
+        if (!el) return;
+        el.title = id;
+        el.innerHTML =
+          `<span style="cursor:help;" title="${id}">${shortNodeId(id)}</span>` +
+          `<button onclick="copyNodeId('${id}', this)" title="Copy full node ID"
+            style="margin-left:4px;padding:1px 6px;font-size:11px;vertical-align:middle;">
+            <i class="ti ti-copy"></i></button>`;
+      });
+    });
+    // Update load buttons: hide if found, show "Retry" if not
+    loadBtns.forEach(b => {
+      if (anyFound) {
+        b.innerHTML = '<i class="ti ti-refresh"></i>';
+        b.title = 'Re-scan startup log';
+        b.disabled = false;
+        b.onclick = () => fetchNodeId(true);
+        b.style.padding = '1px 6px';
+      } else {
+        b.innerHTML = '<i class="ti ti-fingerprint"></i> Not found — Retry';
+        b.disabled = false;
+        b.onclick = () => fetchNodeId(true);
+      }
+    });
+  } catch(e) {
+    loadBtns.forEach(b => { b.disabled = false; b.innerHTML = '<i class="ti ti-fingerprint"></i> Load ID'; });
+  }
+}
+
+let _bdagPrice = null;
+
+function _updateUSDValue() {
+  if (_bdagPrice == null) return;
+  const balEl = document.getElementById('w-balance');
+  if (!balEl) return;
+  const bdag = parseFloat(balEl.textContent);
+  if (!isNaN(bdag) && bdag > 0) set('w-usd', '$' + (bdag * _bdagPrice).toFixed(2));
+}
+
+async function fetchCoinPrice() {
+  try {
+    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=blockdag&vs_currencies=usd', { signal: AbortSignal.timeout(8000) });
+    const j = await r.json();
+    _bdagPrice = j?.blockdag?.usd ?? null;
+    if (_bdagPrice != null) {
+      const p = '$' + _bdagPrice.toFixed(6);
+      set('m-price', p); set('w-price', p);
+      _updateUSDValue();
+    } else {
+      set('m-price', 'N/A'); set('w-price', 'N/A');
+    }
+  } catch(e) { set('m-price', 'N/A'); set('w-price', 'N/A'); }
+}
+
+async function fetchNodeInfo() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/nodeinfo');
+    const j = await r.json();
+    if (j.version) {
+      const tag = j.version.includes(':') ? j.version.split(':').pop() : j.version;
+      set('s-version', tag);
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+async function fetchMempool() {
+  try {
+    const info = await rpc('getMempoolInfo');
+    if (info?.size != null) set('s-mempool', info.size.toLocaleString() + ' txs');
+  } catch(e) { /* non-critical */ }
+}
+
+async function fetchBalance() {
+  const wallet = cfg('cfg-wallet');
+  set('w-addr', wallet);
+  if (!IS_SERVER) { set('w-balance', 'Requires server'); set('m-balance', '?'); return; }
+  try {
+    const hex  = await evm('eth_getBalance', [wallet, 'latest']);
+    const raw  = parseInt(hex, 16) / 1e18;
+    set('w-balance', raw.toFixed(8) + ' BDAG');
+    set('m-balance', raw.toFixed(4));
+    _updateUSDValue();
+  } catch(e) { set('w-balance', '?'); set('m-balance', '?'); }
+}
+
+async function fetchResources() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/resources');
+    const j = await r.json();
+
+    // Disk
+    const total = (j.node1_gb ?? 0) + (j.node2_gb ?? 0);
+    set('m-diskdata', total.toFixed(1) + ' GB');
+    if (j.disk_free_gb != null) {
+      const pctFree = Math.round(j.disk_free_gb / j.disk_total_gb * 100);
+      set('m-diskfree', j.disk_free_gb + ' GB free (' + pctFree + '%)');
+      const el = document.getElementById('m-diskdata');
+      if (el) el.style.color = pctFree < 10 ? '#a32d2d' : pctFree < 20 ? '#856404' : '';
+    }
+
+    // Node uptime (use node1 as representative)
+    const up = j.uptimes?.['bdag-miner-node-1'];
+    set('s-node-uptime', up ?? '?');
+
+    // Memory per container
+    const memMap = {
+      'bdag-miner-node-1': 'r-mem-node1',
+      'bdag-miner-node-2': 'r-mem-node2',
+      'asic-pool':         'r-mem-pool',
+      'pool-db':           'r-mem-db',
+    };
+    for (const [c, id] of Object.entries(memMap)) {
+      set(id, j.mem?.[c] ?? '?');
+    }
+
+    // Docker volumes
+    if (j.docker_vol_size) set('r-vol-size', j.docker_vol_size);
+
+    // Network I/O
+    set('r-net-node1', j.net_io?.['bdag-miner-node-1'] ?? '?');
+    set('r-net-node2', j.net_io?.['bdag-miner-node-2'] ?? '?');
+    set('r-net-pool',  j.net_io?.['asic-pool']         ?? '?');
+
+    // Backup drive free space
+    const bkEl = document.getElementById('r-backup-disk');
+    if (bkEl) {
+      const gb  = j.backup_disk_free_gb;
+      const pct = j.backup_disk_free_pct;
+      if (gb != null && pct != null) {
+        const type = pct >= 20 ? 'ok' : pct >= 10 ? 'warn' : 'err';
+        bkEl.innerHTML = `<span class="badge badge-${type}">${gb} GB free (${pct}%)</span>`;
+      } else {
+        bkEl.innerHTML = `<span class="badge badge-warn">?</span>`;
+      }
+    }
+
+    // Local IP
+    if (j.local_ip) set('m-localip', j.local_ip);
+  } catch(e) { /* non-critical */ }
+}
+
+async function fetchPoolStats() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/poolstats');
+    const j = await r.json();
+    if (j.error) { badge('p-health', 'DB error', 'err'); return; }
+
+    // Health badge + freeze browser notification
+    const h = j.health ?? {};
+    if (h.freeze) {
+      const mins = h.freeze_secs ? Math.round(h.freeze_secs / 60) : '?';
+      badge('p-health', `Frozen ${mins}m`, 'err');
+      if (!_lastFreezeState)
+        browserNotify('BlockDAG Pool Frozen', 'Pool stuck on same block template. Check node-2.');
+    } else {
+      badge('p-health', 'OK', 'ok');
+      if (_lastFreezeState) browserNotify('BlockDAG Pool', 'Freeze resolved ? pool is running normally.');
+    }
+    _lastFreezeState = h.freeze ?? false;
+
+    set('p-miners', j.active_miners ?? 0);
+
+    if (j.hashrate_mhs != null) {
+      set('p-hashrate', j.hashrate_mhs.toFixed(2) + ' MH/s');
+      set('m-hashrate', j.hashrate_mhs.toFixed(2));
+      _addHashratePoint(j.hashrate_mhs);
+    }
+
+    const acc = j.shares_accepted ?? 0;
+    const rej = j.shares_rejected ?? 0;
+    const tot = acc + rej;
+    const rejPct = tot > 0 ? Math.round(rej / tot * 100) : 0;
+    if (tot > 0) {
+      const rejColor = rejPct > 5 ? '#e04040' : 'var(--text)';
+      const sharesEl = document.getElementById('p-shares');
+      if (sharesEl) sharesEl.innerHTML =
+        acc.toLocaleString() + ' ok / <span style="color:' + rejColor + '">' + rej + ' bad (' + rejPct + '% rej)</span>';
+    }
+
+    set('p-blocks-today', j.blocks_today ?? 0);
+
+    if (j.round_secs != null) {
+      const rh = Math.floor(j.round_secs / 3600);
+      const rm = Math.floor((j.round_secs % 3600) / 60);
+      const rs = j.round_secs % 60;
+      set('p-round', rh > 0 ? rh + 'h ' + rm + 'm' : rm > 0 ? rm + 'm ' + rs + 's' : rs + 's');
+    }
+
+    set('p-blocks-total', j.total_blocks ?? 0);
+
+    const b = j.blocks ?? {};
+    const mature   = b.MATURE?.count   ?? 0;
+    const pending  = b.PENDING?.count  ?? 0;
+    const orphaned = b.ORPHANED?.count ?? 0;
+    set('p-blocks-breakdown', `${mature} / ${pending} / ${orphaned}`);
+
+    set('p-total-reward', (j.total_reward_bdag ?? 0).toFixed(8) + ' BDAG');
+
+    const pc = j.pending_credits ?? {};
+    set('p-pending', (pc.bdag ?? 0).toFixed(8) + ' BDAG'
+      + (pc.count ? ` (${pc.count} credits)` : ''));
+
+    const po = j.payouts ?? {};
+    set('p-paid', (po.bdag ?? 0).toFixed(8) + ' BDAG'
+      + (po.count ? ` (${po.count} txs)` : ''));
+
+    // Earnings estimates
+    const totalBlocks = j.total_blocks ?? 0;
+    const blocksToday = j.blocks_today ?? 0;
+    const totalReward = j.total_reward_bdag ?? 0;
+    if (blocksToday > 0 && totalBlocks > 0) {
+      const avgReward  = totalReward / totalBlocks;
+      const daily      = blocksToday * avgReward;
+      const weekly     = daily * 7;
+      const priceStr   = (v) => {
+        const bdagStr = v.toFixed(8) + ' BDAG';
+        return _bdagPrice ? bdagStr + ' ($' + (v * _bdagPrice).toFixed(2) + ')' : bdagStr;
+      };
+      set('p-est-daily',  priceStr(daily));
+      set('p-est-weekly', priceStr(weekly));
+    } else {
+      set('p-est-daily',  '?');
+      set('p-est-weekly', '?');
+    }
+
+    // Payout history
+    _updatePayoutHistory(j.payout_history ?? []);
+
+    // Workers table
+    _updateWorkersTable(j.miners ?? []);
+
+    // Recent blocks table
+    const recent = j.recent_blocks ?? [];
+    if (recent.length) {
+      const cls = { MATURE: 'ok', ORPHANED: 'err', PENDING: 'warn', PAID: 'ok' };
+      document.getElementById('p-recent').style.display = 'block';
+      document.getElementById('p-recent-rows').innerHTML = recent.map(b => `
+        <div class="container-row">
+          <span style="font-family:monospace;font-size:12px;flex:1">${b.hash}</span>
+          <span style="font-size:12px;color:#666;margin:0 12px">#${b.height.toLocaleString()}</span>
+          <span class="badge badge-${cls[b.status]||'warn'}" style="margin-right:8px">${b.status}</span>
+          <span style="font-size:11px;color:#999;white-space:nowrap">${b.time}</span>
+        </div>`).join('');
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+async function fetchMinerMetrics() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/minermetrics');
+    const j = await r.json();
+    if (j.error) return;
+
+    // Hashrate: miner reports H/s, convert to MH/s
+    const hr_mhs = (j.hashrate ?? 0) / 1e6;
+    if (hr_mhs > 0) {
+      set('p-hashrate', hr_mhs.toFixed(4) + ' MH/s');
+      set('m-hashrate', hr_mhs.toFixed(4));
+      _addHashratePoint(hr_mhs);
+    }
+
+    // Cumulative share counts from the miner itself
+    const acc = j.accepted ?? 0;
+    const rej = j.rejected ?? 0;
+    const tot = acc + rej;
+    if (tot > 0) {
+      const rejPct  = Math.round(rej / tot * 100);
+      const rejColor = rejPct > 5 ? '#e04040' : 'var(--text)';
+      const sharesEl = document.getElementById('p-shares');
+      if (sharesEl) sharesEl.innerHTML =
+        acc.toLocaleString() + ' ok / <span style="color:' + rejColor + '">' +
+        rej + ' bad (' + rejPct + '% rej)</span>';
+    }
+
+    // Pool vardiff difficulty as fallback when node difficulty is unavailable
+    if (j.difficulty != null && _isBlank('s-difficulty')) {
+      const d = fmtDifficulty(j.difficulty);
+      set('s-difficulty', d + ' (pool)');
+    }
+
+    // Patch workers table with real miner stats
+    if (j.wallet_full) {
+      const tbody = document.getElementById('workers-tbody');
+      if (!tbody) return;
+      const hrStr   = hr_mhs > 0 ? hr_mhs.toFixed(4) + ' MH/s' : '?';
+      const rej2    = j.rejected ?? 0;
+      const acc2    = j.accepted ?? 0;
+      const tot2    = acc2 + rej2;
+      const rejPct2 = tot2 > 0 ? Math.round(rej2 / tot2 * 100) : 0;
+      const rejCol2 = rejPct2 > 5 ? '#e06060' : 'inherit';
+      const addrShort = j.wallet_full.length > 22 ? j.wallet_full.slice(0, 22) + '...' : j.wallet_full;
+      const worker  = j.worker_name ?? '';
+      const workerCell = worker
+        ? `<span style="color:var(--text);font-weight:500;">${worker}</span>`
+        : `<span style="color:var(--text-dim);">?</span>`;
+      if (tbody.querySelector('td[colspan]')) {
+        // "No workers" placeholder row - replace with real miner row
+        // IP not available from miner metrics (only from pool DB), show dash
+        tbody.innerHTML = `<tr>
+          <td style="font-family:monospace;font-size:13px;">${addrShort}</td>
+          <td><span style="color:var(--text-sub);">&#8212;</span></td>
+          <td>${workerCell}</td>
+          <td>${hrStr}</td>
+          <td style="color:#4caf70;">${acc2.toLocaleString()}</td>
+          <td style="color:${rejCol2};">${rej2}${rejPct2 > 0 ? ' (' + rejPct2 + '%)' : ''}</td>
+          <td style="color:var(--text-muted);">?</td>
+        </tr>`;
+      } else {
+        // Find the matching row and patch its live stats
+        // Column layout: 0=address, 1=ip, 2=worker, 3=hashrate, 4=accepted, 5=rejected, 6=last seen
+        tbody.querySelectorAll('tr').forEach(tr => {
+          const addrTd = tr.querySelector('td:first-child');
+          if (addrTd && j.wallet_full.startsWith(addrTd.textContent.trim().replace('...', '').slice(0, 10))) {
+            if (tr.cells.length >= 6) {
+              tr.cells[3].textContent = hrStr;
+              tr.cells[4].textContent = acc2.toLocaleString();
+              tr.cells[4].style.color = '#4caf70';
+              tr.cells[5].innerHTML   = rej2 + (rejPct2 > 0 ? ' (' + rejPct2 + '%)' : '');
+              tr.cells[5].style.color = rejCol2;
+            }
+          }
+        });
+      }
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+function _applyIntervalHoursToFields(n, h) {
+  let val, unit;
+  if (h % 720 === 0)      { val = h / 720; unit = 'months'; }
+  else if (h % 168 === 0) { val = h / 168; unit = 'weeks';  }
+  else if (h % 24 === 0)  { val = h / 24;  unit = 'days';   }
+  else                     { val = h;       unit = 'hours';  }
+  document.getElementById('bk' + n + '-value').value = val;
+  document.getElementById('bk' + n + '-unit').value  = unit;
+}
+
+function _saveBackupScheduleLocal(n, val, unit) {
+  try { localStorage.setItem('bk' + n + '-sched', JSON.stringify({ val, unit })); } catch(e) {}
+}
+
+function _restoreBackupScheduleLocal() {
+  for (const n of [1, 2]) {
+    try {
+      const s = localStorage.getItem('bk' + n + '-sched');
+      if (!s) continue;
+      const { val, unit } = JSON.parse(s);
+      document.getElementById('bk' + n + '-value').value = val;
+      document.getElementById('bk' + n + '-unit').value  = unit;
+    } catch(e) {}
+  }
+}
+
+function bkStatus(msg, type) {
+  const el = document.getElementById('bk-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.className   = 'ctrl-status ' + (type || '');
+  if (type === 'ok') setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 5000);
+}
+
+async function fetchBackupSchedule() {
+  if (!IS_SERVER) return;
+  for (const n of [1, 2]) {
+    try {
+      const r = await fetch('/backup/schedule?task=' + n);
+      const j = await r.json();
+      if (!j.task_exists) {
+        set('bk' + n + '-last', '?');
+        set('bk' + n + '-next', 'Task not scheduled ? run setup-tasks.ps1');
+        continue;
+      }
+      set('bk' + n + '-last', j.last_run ?? '?');
+      set('bk' + n + '-next', j.next_run ?? '?');
+      if (j.interval_hours != null && j.interval_hours > 0) {
+        _applyIntervalHoursToFields(n, j.interval_hours);
+        // Keep localStorage in sync with what the task scheduler reports
+        const valEl  = document.getElementById('bk' + n + '-value');
+        const unitEl = document.getElementById('bk' + n + '-unit');
+        _saveBackupScheduleLocal(n, valEl.value, unitEl.value);
+      }
+      const lastEl = document.getElementById('bk' + n + '-last');
+      if (lastEl && j.last_result_ok === false) lastEl.style.color = '#a32d2d';
+      else if (lastEl) lastEl.style.color = '';
+      if (j.enabled != null) _setBackupToggleBtn(n, j.enabled);
+    } catch(e) { /* non-critical */ }
+  }
+}
+
+function _setBackupToggleBtn(taskNum, enabled) {
+  const btn = document.getElementById('bk' + taskNum + '-toggle-btn');
+  if (!btn) return;
+  btn.dataset.enabled = enabled ? 'true' : 'false';
+  btn.className       = enabled ? 'btn-green' : 'btn-red';
+  btn.style.cssText   = 'font-size:12px;padding:3px 10px;';
+  btn.innerHTML       = enabled
+    ? '<i class="ti ti-check"></i> Enabled'
+    : '<i class="ti ti-x"></i> Disabled';
+}
+
+async function toggleBackupEnabled(taskNum) {
+  const btn = document.getElementById('bk' + taskNum + '-toggle-btn');
+  if (!btn) return;
+  const currentlyEnabled = btn.dataset.enabled === 'true';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/backup/schedule/enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: taskNum, enabled: !currentlyEnabled })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      _setBackupToggleBtn(taskNum, !currentlyEnabled);
+      bkStatus('Schedule ' + taskNum + (currentlyEnabled ? ' disabled.' : ' enabled.'), 'ok');
+    } else {
+      bkStatus('Error: ' + (j.error || 'unknown'), 'err');
+    }
+  } catch(e) {
+    bkStatus('Error: ' + e, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function applyBackupSchedule(taskNum) {
+  if (!IS_SERVER) return;
+  const n    = taskNum || 1;
+  const val  = parseFloat(document.getElementById('bk' + n + '-value').value);
+  const unit = document.getElementById('bk' + n + '-unit').value;
+  if (!val || val <= 0) {
+    document.getElementById('bk-status').textContent = 'Schedule ' + n + ': enter a valid interval.';
+    document.getElementById('bk-status').className = 'ctrl-status err';
+    return;
+  }
+  const multiplier = { hours: 1, days: 24, weeks: 168, months: 720 }[unit];
+  const hours = val * multiplier;
+  const label = val + ' ' + unit;
+  const btn = document.getElementById('bk' + n + '-apply-btn');
+  btn.disabled = true;
+  document.getElementById('bk-status').textContent = 'Updating schedule ' + n + '...';
+  document.getElementById('bk-status').className = 'ctrl-status warn';
+  try {
+    const r = await fetch('/backup/schedule?task=' + n, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interval_hours: hours })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      document.getElementById('bk-status').textContent =
+        'Schedule ' + n + ' updated ? running every ' + label + '.';
+      document.getElementById('bk-status').className = 'ctrl-status ok';
+      _saveBackupScheduleLocal(n, val, unit);
+      fetchBackupSchedule();
+    } else {
+      document.getElementById('bk-status').textContent = 'Failed: ' + j.error;
+      document.getElementById('bk-status').className = 'ctrl-status err';
+    }
+  } catch(e) {
+    document.getElementById('bk-status').textContent = 'Request failed: ' + e.message;
+    document.getElementById('bk-status').className = 'ctrl-status err';
+  }
+  btn.disabled = false;
+}
+
+async function fetchPublicIP() {
+  try {
+    const r = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(8000) });
+    const j = await r.json();
+    set('m-pubip', j.ip);
+  } catch(e) { set('m-pubip', 'Unavailable'); }
+}
+
+async function fetchContainers() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/containers');
+    const j = await r.json();
+    const cls = { running: 'ok', exited: 'err', stopped: 'err', paused: 'warn' };
+    for (const [name, state] of Object.entries(j)) {
+      const el = document.getElementById('c-' + name);
+      if (el) el.outerHTML =
+        `<span class="badge badge-${cls[state]||'warn'}" id="c-${name}">${state}</span>`;
+    }
+  } catch(e) { /* server unavailable */ }
+}
+
+// -- Node control --------------------------------------------------------------
+
+async function nodeAction(action) {
+  const labels     = { start: 'Starting', stop: 'Stopping', restart: 'Rebooting' };
+  const containers = 'bdag-miner-node-1 bdag-miner-node-2 asic-pool rpc-failover pool-db';
+  if (!IS_SERVER) {
+    showModal(action.charAt(0).toUpperCase() + action.slice(1) + ' nodes',
+      `docker ${action} ${containers}`);
+    return;
+  }
+  ctrlStatus(labels[action] + ' containers...', 'warn');
+  document.querySelectorAll('.ctrl-row button').forEach(b => b.disabled = true);
+  try {
+    const r = await fetch('/docker/' + action, { method: 'POST' });
+    const j = await r.json();
+    const errs = Object.values(j.results).filter(v => v !== 'ok');
+    ctrlStatus(errs.length === 0
+      ? labels[action].replace('ing', 'ed') + ' successfully.'
+      : 'Issues: ' + errs.join('; '),
+      errs.length === 0 ? 'ok' : 'err');
+    setTimeout(fetchContainers, 2000);
+  } catch(e) { ctrlStatus('Request failed: ' + e.message, 'err'); }
+  document.querySelectorAll('.ctrl-row button').forEach(b => b.disabled = false);
+}
+
+async function backupNow() {
+  if (!IS_SERVER) {
+    const d = new Date().toISOString().slice(0,10);
+    showModal('Backup chain data',
+      'docker stop bdag-miner-node-1\n' +
+      `Copy-Item -Recurse C:\\blockdag\\data\\node1 C:\\blockdag\\data-restore\\backups\\backup-${d}\\node1\n` +
+      'docker start bdag-miner-node-1\n' +
+      `Copy-Item -Recurse C:\\blockdag\\data\\node2 C:\\blockdag\\data-restore\\backups\\backup-${d}\\node2`);
+    return;
+  }
+  bkStatus('Stopping node1, copying chain data...', 'warn');
+  const bkBtn = document.getElementById('bk-apply-btn');
+  if (bkBtn) bkBtn.disabled = true;
+  try {
+    const r = await fetch('/backup', { method: 'POST' });
+    const j = await r.json();
+    bkStatus(j.ok ? 'Backup saved to: ' + j.path : 'Backup failed: ' + j.error,
+             j.ok ? 'ok' : 'err');
+  } catch(e) { bkStatus('Request failed: ' + e.message, 'err'); }
+  if (bkBtn) bkBtn.disabled = false;
+  setTimeout(fetchContainers, 2000);
+}
+
+async function runSetupTasks() {
+  if (!IS_SERVER) {
+    showModal('Re-register Tasks', 'powershell -ExecutionPolicy Bypass -File "C:\\blockdag\\dashboard\\setup-tasks.ps1"');
+    return;
+  }
+  const btn = document.getElementById('bk-setup-btn');
+  btn.disabled = true;
+  bkStatus('Re-registering scheduled tasks...', 'warn');
+  try {
+    const r = await fetch('/setup/tasks', { method: 'POST' });
+    const j = await r.json();
+    if (j.ok) {
+      bkStatus('Tasks re-registered successfully.', 'ok');
+    } else {
+      bkStatus('Failed: ' + j.error, 'err');
+    }
+  } catch(e) {
+    bkStatus('Error: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { document.getElementById('bk-status').textContent = ''; }, 6000);
+  }
+}
+
+// -- Logs ----------------------------------------------------------------------
+
+// Drag-to-move
+(function() {
+  let dragging = false, ox = 0, oy = 0;
+  document.addEventListener('mousedown', e => {
+    const handle = document.getElementById('log-drag-handle');
+    if (!handle || !handle.contains(e.target) || e.target.tagName === 'BUTTON') return;
+    const box = document.getElementById('log-modal-box');
+    dragging = true;
+    ox = e.clientX - box.offsetLeft;
+    oy = e.clientY - box.offsetTop;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const box = document.getElementById('log-modal-box');
+    box.style.left = Math.max(0, e.clientX - ox) + 'px';
+    box.style.top  = Math.max(0, e.clientY - oy) + 'px';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+})();
+
+let logRefreshTimer = null;
+
+function openLogs(container) {
+  if (!IS_SERVER) return;
+  document.getElementById('log-modal').style.display = 'flex';
+  if (container) document.getElementById('log-container-sel').value = container;
+  fetchLogs();
+  logRefreshTimer = setInterval(fetchLogs, 10000);
+}
+
+function closeLogs() {
+  document.getElementById('log-modal').style.display = 'none';
+  clearInterval(logRefreshTimer);
+}
+
+async function fetchLogs() {
+  const container = document.getElementById('log-container-sel').value;
+  const tail      = document.getElementById('log-tail-sel').value;
+  const pre       = document.getElementById('log-pre');
+  try {
+    const r = await fetch(`/logs?container=${encodeURIComponent(container)}&tail=${tail}`);
+    const j = await r.json();
+    if (j.error) { pre.textContent = 'Error: ' + j.error; return; }
+    pre.textContent = j.lines.join('\n');
+    if (document.getElementById('log-autoscroll').checked) {
+      pre.scrollTop = pre.scrollHeight;
+    }
+  } catch(e) { pre.textContent = 'Failed: ' + e.message; }
+}
+
+// -- Alerts --------------------------------------------------------------------
+
+function alStatus(msg, type) {
+  const el = document.getElementById('al-status');
+  el.textContent = msg;
+  el.className   = 'ctrl-status ' + type;
+}
+
+async function loadAlertConfig() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/alerts/config');
+    const j = await r.json();
+    if (j.discord_url)      document.getElementById('al-discord').value   = j.discord_url;
+    if (j.telegram_token)   document.getElementById('al-tg-token').value  = j.telegram_token;
+    if (j.telegram_chat_id) document.getElementById('al-tg-chat').value   = j.telegram_chat_id;
+    if (j.peer_threshold != null) document.getElementById('al-peer-thr').value = j.peer_threshold;
+    if (j.divergence_threshold != null) document.getElementById('al-div-thr').value = j.divergence_threshold;
+    if (j.disk_threshold_pct != null) document.getElementById('al-disk-thr').value = j.disk_threshold_pct;
+    document.getElementById('al-freeze-chk').checked    = j.freeze_alert  !== false;
+    document.getElementById('al-peer-chk').checked      = j.peer_alert    !== false;
+    const autoAddEl = document.getElementById('al-peer-auto-add');
+    if (autoAddEl) autoAddEl.checked = j.peer_auto_add === true;
+  } catch(e) { /* non-critical */ }
+}
+
+async function saveAlertConfig() {
+  if (!IS_SERVER) return;
+  const cfg = {
+    discord_url:          document.getElementById('al-discord').value.trim(),
+    telegram_token:       document.getElementById('al-tg-token').value.trim(),
+    telegram_chat_id:     document.getElementById('al-tg-chat').value.trim(),
+    peer_threshold:       parseInt(document.getElementById('al-peer-thr').value) || 5,
+    divergence_threshold: parseInt(document.getElementById('al-div-thr').value) || 10,
+    disk_threshold_pct:   parseFloat(document.getElementById('al-disk-thr').value) || 15,
+    freeze_alert:         document.getElementById('al-freeze-chk').checked,
+    peer_alert:           document.getElementById('al-peer-chk').checked,
+    peer_auto_add:        document.getElementById('al-peer-auto-add')?.checked ?? false,
+  };
+  alStatus('Saving...', 'warn');
+  try {
+    const r = await fetch('/alerts/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg)
+    });
+    const j = await r.json();
+    alStatus(j.ok ? 'Saved.' : 'Failed: ' + j.error, j.ok ? 'ok' : 'err');
+  } catch(e) { alStatus('Request failed: ' + e.message, 'err'); }
+}
+
+async function testAlert() {
+  if (!IS_SERVER) return;
+  alStatus('Sending test...', 'warn');
+  try {
+    const r = await fetch('/alerts/test', { method: 'POST' });
+    const j = await r.json();
+    alStatus(j.ok ? 'Test alert sent!' : 'Failed: ' + (j.error || 'No webhook configured'), j.ok ? 'ok' : 'err');
+  } catch(e) { alStatus('Request failed: ' + e.message, 'err'); }
+}
+
+// -- Dark mode -----------------------------------------------------------------
+
+function toggleDark() {
+  const dark = document.body.classList.toggle('dark');
+  localStorage.setItem('darkMode', dark ? '1' : '0');
+  document.getElementById('dark-icon').className = dark ? 'ti ti-sun' : 'ti ti-moon';
+  _renderSparkline();
+}
+(function() {
+  if (localStorage.getItem('darkMode') === '1') {
+    document.body.classList.add('dark');
+    const ic = document.getElementById('dark-icon');
+    if (ic) ic.className = 'ti ti-sun';
+  }
+})();
+
+// -- Auto-refresh --------------------------------------------------------------
+
+let _refreshTimer = null;
+function setRefresh(secs) {
+  if (_refreshTimer) clearInterval(_refreshTimer);
+  _refreshTimer = null;
+  document.querySelectorAll('.refresh-opt').forEach(b =>
+    b.classList.toggle('active', +b.dataset.s === secs));
+  if (secs > 0) _refreshTimer = setInterval(fetchAll, secs * 1000);
+}
+
+// -- Browser notifications -----------------------------------------------------
+
+function initNotifications() {
+  const btn = document.getElementById('notif-btn');
+  const lbl = document.getElementById('notif-label');
+  const st  = document.getElementById('notif-status');
+  if (!('Notification' in window)) {
+    if (st) st.textContent = 'Not supported in this browser.';
+    if (btn) btn.disabled = true;
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    if (lbl) lbl.textContent = 'Browser alerts enabled';
+    if (btn) btn.classList.add('btn-green');
+  } else if (Notification.permission === 'denied') {
+    if (lbl) lbl.textContent = 'Browser alerts blocked';
+    if (btn) btn.disabled = true;
+    if (st)  st.textContent = 'Allow notifications in browser settings.';
+  }
+}
+async function toggleNotifications() {
+  if (Notification.permission === 'granted') return;
+  await Notification.requestPermission();
+  initNotifications();
+}
+function browserNotify(title, body) {
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
+    new Notification(title, { body });
+}
+
+// -- Hashrate sparkline --------------------------------------------------------
+
+const _hrHistory = [];
+function _addHashratePoint(mhs) {
+  if (mhs == null) return;
+  _hrHistory.push(mhs);
+  if (_hrHistory.length > 30) _hrHistory.shift();
+  _renderSparkline();
+}
+function _renderSparkline() {
+  const el = document.getElementById('p-hashrate-spark');
+  if (!el || _hrHistory.length < 2) return;
+  const W = 80, H = 28;
+  const mx = Math.max(..._hrHistory, 0.001), mn = Math.min(..._hrHistory);
+  const rng = mx - mn || 1;
+  const pts = _hrHistory.map((v, i) => {
+    const x = (i / (_hrHistory.length - 1)) * W;
+    const y = H - ((v - mn) / rng) * (H - 4) - 2;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  const stroke = document.body.classList.contains('dark') ? '#6a9adf' : '#1a56db';
+  el.innerHTML = `<svg width="${W}" height="${H}" class="sparkline"><polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+// -- Difficulty ----------------------------------------------------------------
+
+async function fetchDifficulty() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/difficulty');
+    const j = await r.json();
+    if (j.difficulty != null) {
+      const d = typeof j.difficulty === 'number' ? fmtDifficulty(j.difficulty) : String(j.difficulty);
+      set('s-difficulty', d);
+    }
+    if (j.avg_block_time_secs != null)
+      set('s-blocktime', j.avg_block_time_secs.toFixed(1) + 's');
+  } catch(e) { /* non-critical */ }
+}
+
+// -- Per-container action ------------------------------------------------------
+
+async function containerAction(action, container) {
+  if (!IS_SERVER) { showModal('docker ' + action, 'docker ' + action + ' ' + container); return; }
+  const el = document.getElementById('c-' + container);
+  if (el) el.outerHTML = `<span class="badge badge-warn" id="c-${container}">${action}ing...</span>`;
+  try {
+    await fetch('/docker/' + action, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ container })
+    });
+    setTimeout(fetchContainers, 2500);
+  } catch(e) { setTimeout(fetchContainers, 2500); }
+}
+
+// -- Workers table -------------------------------------------------------------
+
+function toggleWorkers() {
+  const body = document.getElementById('workers-body');
+  const chev = document.getElementById('workers-chevron');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+}
+
+function _updateWorkersTable(miners) {
+  const tbody = document.getElementById('workers-tbody');
+  const note  = document.getElementById('workers-note');
+  if (!tbody) return;
+  if (!miners || miners.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--text-sub);padding:16px 10px;">No workers active in the last 24 hours.</td></tr>`;
+    return;
+  }
+  if (note) note.style.display = 'none';
+  tbody.innerHTML = miners.map(m => {
+    const tot    = m.accepted + m.rejected;
+    const rejPct = tot > 0 ? Math.round(m.rejected / tot * 100) : 0;
+    const hrStr  = m.hashrate_mhs > 0 ? m.hashrate_mhs.toFixed(4) + ' MH/s' : '—';
+    const rejCol = rejPct > 5 ? '#e06060' : 'inherit';
+    const addrShort = m.address && m.address.length > 14
+      ? m.address.slice(0, 6) + '…' + m.address.slice(-6) : (m.address || '—');
+    const workerCell = m.worker
+      ? `<span style="color:var(--text);font-weight:500;">${m.worker}</span>`
+      : `<span style="color:var(--text-sub);">—</span>`;
+    const ipOk = m.ip && m.ip !== 'None' && m.ip !== '';
+    const ipCell = ipOk
+      ? `<span style="font-family:monospace;font-size:12px;">${m.ip}</span>`
+      : `<span style="color:var(--text-sub);">&#8212;</span>`;
+    return `<tr>
+      <td title="${m.address}" style="font-family:monospace;font-size:13px;cursor:help;">${addrShort}</td>
+      <td>${ipCell}</td>
+      <td>${workerCell}</td>
+      <td>${hrStr}</td>
+      <td style="color:#4caf70;">${m.accepted.toLocaleString()}</td>
+      <td style="color:${rejCol};">${m.rejected}${rejPct > 0 ? ' (' + rejPct + '%)' : ''}</td>
+      <td style="color:var(--text-muted);">${m.last_active}</td>
+    </tr>`;
+  }).join('');
+}
+
+// -- Backup retention ----------------------------------------------------------
+
+async function fetchBackupConfig() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/backup/config');
+    const j = await r.json();
+    for (const n of [1, 2]) {
+      const el = document.getElementById('bk' + n + '-retain');
+      const key = 'retain_copies_' + n;
+      if (el && j[key] != null) el.value = j[key];
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+async function saveBackupRetention(scheduleNum) {
+  if (!IS_SERVER) return;
+  const n   = scheduleNum || 1;
+  const key = 'retain_copies_' + n;
+  const val = parseInt(document.getElementById('bk' + n + '-retain').value, 10);
+  if (!val || val < 1) {
+    document.getElementById('bk-status').textContent = 'Schedule ' + n + ': enter a valid number of copies (&ge; 1).';
+    document.getElementById('bk-status').className = 'ctrl-status err';
+    return;
+  }
+  const btn = document.getElementById('bk' + n + '-retain-btn');
+  btn.disabled = true;
+  document.getElementById('bk-status').textContent = 'Saving schedule ' + n + ' retention...';
+  document.getElementById('bk-status').className = 'ctrl-status warn';
+  try {
+    const r = await fetch('/backup/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: val })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      document.getElementById('bk-status').textContent =
+        'Schedule ' + n + ': keeping last ' + val + ' backup' + (val === 1 ? '' : 's') + '.';
+      document.getElementById('bk-status').className = 'ctrl-status ok';
+    } else {
+      document.getElementById('bk-status').textContent = 'Failed: ' + j.error;
+      document.getElementById('bk-status').className = 'ctrl-status err';
+    }
+  } catch(e) {
+    document.getElementById('bk-status').textContent = 'Error: ' + e.message;
+    document.getElementById('bk-status').className = 'ctrl-status err';
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { document.getElementById('bk-status').textContent = ''; }, 4000);
+  }
+}
+
+// -- Alert history -------------------------------------------------------------
+
+function toggleAlertHistory() {
+  const body = document.getElementById('alert-history-body');
+  const chev = document.getElementById('alert-history-chevron');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+}
+
+async function fetchAlertHistory() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/alerts/history');
+    const j = await r.json();
+    const tbody = document.getElementById('alert-history-tbody');
+    if (!tbody) return;
+    const hist = j.history ?? [];
+    if (!hist.length) {
+      tbody.innerHTML = `<tr><td colspan="2" style="color:var(--text-sub);padding:10px;">No alert history.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = hist.map(h =>
+      `<tr><td style="white-space:nowrap;color:var(--text-muted);font-size:13px;">${h.time}</td><td style="font-size:13px;">${h.msg}</td></tr>`
+    ).join('');
+  } catch(e) { /* non-critical */ }
+}
+
+// -- Node heights / divergence -------------------------------------------------
+
+async function fetchNodeHeights() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/node/heights');
+    const j = await r.json();
+    if (j.error) { badge('s-divergence', 'Error', 'err'); return; }
+    const diff = j.diff_blocks ?? 0;
+    const label = `node1 ${(j.node1??0).toLocaleString()} vs node2 ${(j.node2??0).toLocaleString()} (&Delta;${diff})`;
+    const type  = diff <= 10 ? 'ok' : diff <= 50 ? 'warn' : 'err';
+    badge('s-divergence', label, type);
+  } catch(e) { badge('s-divergence', '?', 'warn'); }
+}
+
+// -- HAProxy status ------------------------------------------------------------
+
+async function fetchHAProxyStatus() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/haproxy/status');
+    const j = await r.json();
+    const el = document.getElementById('haproxy-backend');
+    if (!el) return;
+    if (j.fallback || !j.active) {
+      el.innerHTML = `<span class="badge badge-warn">${j.active ?? 'unknown'}</span>`;
+    } else {
+      el.innerHTML = `<span class="badge badge-ok">${j.active}</span>`;
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+// -- Peers ---------------------------------------------------------------------
+
+function _peerMgrStatus(msg, type) {
+  const el = document.getElementById('peer-manager-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'ctrl-status ' + type;
+  if (type === 'ok') setTimeout(() => { el.textContent = ''; el.className = 'ctrl-status'; }, 4000);
+}
+
+async function loadPeers() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/peers');
+    const j = await r.json();
+    const peers = j.peers ?? [];
+    const ta = document.getElementById('peer-manager-textarea');
+    if (ta) ta.value = peers.join('\n');
+    const cnt = document.getElementById('peer-manager-count');
+    if (cnt) cnt.textContent = `(${peers.length} peers)`;
+    const note = document.getElementById('ctrl-peers-note');
+    if (note) note.textContent = `${peers.length} peers in file`;
+    const laa = document.getElementById('peer-last-auto-add');
+    if (laa) laa.textContent = j.last_auto_add ?? '?';
+    _renderPeerCheckboxList(peers);
+  } catch(e) { /* non-critical */ }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _renderPeerCheckboxList(peers) {
+  const list = document.getElementById('peer-manager-list');
+  if (!list) return;
+  if (!peers || peers.length === 0) {
+    list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-sub);">No peers in list. Add some via the raw editor below, or reload from file.</div>';
+    return;
+  }
+  list.innerHTML = peers.map(p => {
+    const ipMatch = p.match(/\/ip4\/([\d.]+)/);
+    const ip = ipMatch ? ipMatch[1] : '?';
+    const short = p.length > 55 ? p.slice(0, 38) + '...' + p.slice(-10) : p;
+    return `<label style="display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer;
+                          border-bottom:1px solid var(--border-row);user-select:none;">
+      <input type="checkbox" class="peer-checkbox" data-peer="${escHtml(p)}" checked
+             style="width:16px;height:16px;flex-shrink:0;cursor:pointer;" />
+      <span style="font-family:monospace;font-size:12px;color:var(--text-muted);
+                   min-width:94px;flex-shrink:0;">${ip}</span>
+      <span style="font-family:monospace;font-size:12px;overflow:hidden;white-space:nowrap;
+                   text-overflow:ellipsis;" title="${escHtml(p)}">${escHtml(short)}</span>
+    </label>`;
+  }).join('');
+}
+
+function selectAllPeers(state) {
+  document.querySelectorAll('.peer-checkbox').forEach(cb => { cb.checked = state; });
+}
+
+async function addSelectedPeers() {
+  if (!IS_SERVER) return;
+  const checked = [...document.querySelectorAll('.peer-checkbox:checked')]
+    .map(cb => cb.dataset.peer)
+    .filter(p => p && p.startsWith('/ip4/'));
+  if (checked.length === 0) {
+    _peerMgrStatus('No peers selected. Tick at least one peer in the list.', 'warn');
+    return;
+  }
+  const btn = document.getElementById('peer-add-selected-btn');
+  if (btn) btn.disabled = true;
+  _peerMgrStatus(`Applying ${checked.length} selected peer(s) to docker-compose.yml...`, 'warn');
+  ctrlStatus('Adding peers...', 'warn');
+  try {
+    const r = await fetch('/peers/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ peers: checked })
+    });
+    const j = await r.json();
+    const msg = j.ok
+      ? (j.note ?? `Applied ${j.added} new peer(s) to docker-compose.yml. Restart nodes to connect.`)
+      : 'Failed: ' + (j.error ?? 'Unknown error');
+    _peerMgrStatus(msg, j.ok ? 'ok' : 'err');
+    ctrlStatus(msg, j.ok ? 'ok' : 'err');
+  } catch(e) {
+    _peerMgrStatus('Error: ' + e.message, 'err');
+    ctrlStatus('Error: ' + e.message, 'err');
+  } finally { if (btn) btn.disabled = false; }
+}
+
+async function fetchPeersCount() { await loadPeers(); }
+
+async function savePeers() {
+  if (!IS_SERVER) return;
+  const ta  = document.getElementById('peer-manager-textarea');
+  const btn = document.getElementById('peer-save-btn');
+  if (!ta) return;
+  btn.disabled = true;
+  _peerMgrStatus('Saving...', 'warn');
+  try {
+    const r = await fetch('/peers/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ peers: ta.value })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      _peerMgrStatus(`Saved ${j.count} peer(s).`, 'ok');
+      const cnt = document.getElementById('peer-manager-count');
+      if (cnt) cnt.textContent = `(${j.count} peers)`;
+      const note = document.getElementById('ctrl-peers-note');
+      if (note) note.textContent = `${j.count} peers in file`;
+    } else {
+      _peerMgrStatus('Save failed: ' + j.error, 'err');
+    }
+  } catch(e) { _peerMgrStatus('Error: ' + e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function addAllPeers() {
+  if (!IS_SERVER) return;
+  // Use the textarea content if peer manager is open, otherwise use server file
+  const ta = document.getElementById('peer-manager-textarea');
+  const peers = ta && ta.value.trim()
+    ? ta.value.trim().split('\n').map(l => l.trim()).filter(l => l.startsWith('/ip4/'))
+    : null;
+  const btn = document.getElementById('peer-add-btn');
+  if (btn) btn.disabled = true;
+  _peerMgrStatus('Adding peers to node...', 'warn');
+  ctrlStatus('Adding peers...', 'warn');
+  try {
+    const body = peers ? { peers } : {};
+    const r = await fetch('/peers/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    const msg = j.ok
+      ? (j.note ?? `Applied ${j.added} new peer(s) to docker-compose.yml. Restart nodes to connect.`)
+      : 'Failed: ' + (j.error ?? 'Unknown error');
+    const type = j.ok ? 'ok' : 'err';
+    _peerMgrStatus(msg, type);
+    ctrlStatus(msg, type);
+  } catch(e) {
+    _peerMgrStatus('Error: ' + e.message, 'err');
+    ctrlStatus('Error: ' + e.message, 'err');
+  } finally { if (btn) btn.disabled = false; }
+}
+
+async function clearPeerManagerList() {
+  if (!IS_SERVER) return;
+  if (!confirm('Clear all peers from the manager list?\n\nThis will NOT change docker-compose.yml — use Apply Selected or Apply All to write peers there.')) return;
+  const btn = document.getElementById('peer-clear-btn');
+  if (btn) btn.disabled = true;
+  _peerMgrStatus('Clearing peer list...', 'warn');
+  try {
+    const r = await fetch('/peers/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ peers: '' })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      const ta = document.getElementById('peer-manager-textarea');
+      if (ta) ta.value = '';
+      _renderPeerCheckboxList([]);
+      const cnt = document.getElementById('peer-manager-count');
+      if (cnt) cnt.textContent = '(0 peers)';
+      const note = document.getElementById('ctrl-peers-note');
+      if (note) note.textContent = '0 peers in file';
+      _peerMgrStatus('Peer list cleared.', 'ok');
+    } else {
+      _peerMgrStatus('Failed: ' + (j.error ?? 'Unknown error'), 'err');
+    }
+  } catch(e) {
+    _peerMgrStatus('Error: ' + e.message, 'err');
+  } finally { if (btn) btn.disabled = false; }
+}
+
+function togglePeerManager() {
+  const body = document.getElementById('peer-manager-body');
+  const chev = document.getElementById('peer-manager-chevron');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  chev.style.transform = open ? 'rotate(180deg)' : '';
+  if (open) loadPeers();
+}
+
+// -- Connected Peers ------------------------------------------------------------
+
+async function fetchConnectedPeers() {
+  if (!IS_SERVER) return;
+  const tbody = document.getElementById('connected-peers-tbody');
+  const ts    = document.getElementById('connected-peers-ts');
+  const cnt   = document.getElementById('connected-peers-count');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:16px;">Loading...</td></tr>';
+  try {
+    const r = await fetch('/peers/connected');
+    const j = await r.json();
+    if (cnt) cnt.textContent = j.count != null ? `(${j.count} connected)` : '';
+    if (!j.peers || j.peers.length === 0) {
+      const cols = 5;
+      const note = j.error ? `Error: ${j.error}` : (j.note ?? 'No peers connected');
+      tbody.innerHTML = `<tr><td colspan="${cols}" style="color:var(--text-muted);text-align:center;padding:16px;">${note}</td></tr>`;
+    } else {
+      tbody.innerHTML = j.peers.map(p => {
+        const dir    = p.inbound
+          ? '<span class="badge badge-warn" style="font-size:11px;">in</span>'
+          : '<span class="badge badge-ok"   style="font-size:11px;">out</span>';
+        const height = p.height != null ? p.height.toLocaleString() : '?';
+        const ver    = (p.version || '?').slice(0, 12);
+        const conn   = p.conntime || '?';
+        const nodeId = p.full_addr ? (p.full_addr.split('/p2p/')[1] || '') : '';
+        const nodeIdShort = nodeId ? shortNodeId(nodeId) : '';
+        const nodeIdLine  = nodeId
+          ? `<div style="font-size:11px;color:var(--text-sub);margin-top:2px;" title="${nodeId}">${nodeIdShort}</div>`
+          : '';
+        return `<tr>
+          <td style="font-family:monospace;font-size:13px;">${p.addr}${nodeIdLine}</td>
+          <td>${dir}</td>
+          <td style="font-family:monospace;font-size:13px;">${conn}</td>
+          <td style="font-family:monospace;font-size:13px;">${height}</td>
+          <td style="color:var(--text-muted);font-size:12px;">${ver}</td></tr>`;
+      }).join('');
+    }
+    if (ts) ts.textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);text-align:center;padding:16px;">Request failed: ${e.message}</td></tr>`;
+  }
+}
+
+function toggleConnectedPeers() {
+  const body = document.getElementById('connected-peers-body');
+  const chev = document.getElementById('connected-peers-chevron');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  chev.style.transform = open ? 'rotate(180deg)' : '';
+  if (open) fetchConnectedPeers();
+}
+
+async function importConnectedToPeerManager() {
+  if (!IS_SERVER) return;
+  const statusEl = document.getElementById('connected-import-status');
+  if (statusEl) { statusEl.textContent = 'Importing...'; statusEl.style.color = 'var(--text-sub)'; }
+  try {
+    // Fetch currently connected peers
+    const r = await fetch('/peers/connected');
+    const j = await r.json();
+    const connected = (j.peers ?? []).map(p => p.full_addr).filter(a => a && a.startsWith('/ip4/'));
+
+    // Fetch managed list
+    const r2 = await fetch('/peers');
+    const j2 = await r2.json();
+    const existing = new Set((j2.peers ?? []).map(p => p.trim()));
+
+    const newPeers = connected.filter(p => !existing.has(p.trim()));
+    if (newPeers.length === 0) {
+      if (statusEl) { statusEl.textContent = 'All connected peers already in list.'; statusEl.style.color = 'var(--text-sub)'; }
+      return;
+    }
+
+    // Merge and save
+    const merged = [...existing, ...newPeers].filter(Boolean);
+    const saveR = await fetch('/peers/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ peers: merged })
+    });
+    const saveJ = await saveR.json();
+    if (saveJ.ok) {
+      await loadPeers(); // refresh textarea
+      if (statusEl) { statusEl.textContent = `Added ${newPeers.length} new peer(s).`; statusEl.style.color = 'var(--ok)'; }
+      // Open peer manager so user can see the updated list
+      const pmBody = document.getElementById('peer-manager-body');
+      const pmChev = document.getElementById('peer-manager-chevron');
+      if (pmBody && pmBody.style.display === 'none') {
+        pmBody.style.display = 'block';
+        if (pmChev) pmChev.style.transform = 'rotate(180deg)';
+      }
+    } else {
+      if (statusEl) { statusEl.textContent = 'Save failed.'; statusEl.style.color = 'var(--warn)'; }
+    }
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = `Error: ${e.message}`; statusEl.style.color = 'var(--warn)'; }
+  }
+  setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 6000);
+}
+
+// -- Backup verify -------------------------------------------------------------
+
+async function verifyBackup() {
+  if (!IS_SERVER) return;
+  const btn = document.getElementById('bk-verify-btn');
+  const res = document.getElementById('bk-verify-result');
+  if (btn) btn.disabled = true;
+  bkStatus('Verifying last backup...', 'warn');
+  if (res) res.style.display = 'none';
+  try {
+    const r = await fetch('/backup/verify');
+    const j = await r.json();
+    if (j.error) { bkStatus('Error: ' + j.error, 'err'); return; }
+    bkStatus(j.ok ? 'Backup verified OK.' : 'Backup verification FAILED.', j.ok ? 'ok' : 'err');
+    if (res && j.nodes) {
+      const n1 = j.nodes.node1 ?? {};
+      const n2 = j.nodes.node2 ?? {};
+      const fmt = (n) => `${(n.src_files??0).toLocaleString()} / ${(n.backup_files??0).toLocaleString()} ${n.ok ? '&#10003;' : '&#10007;'}`;
+      res.textContent = `${j.backup} ? node1: ${fmt(n1)}  node2: ${fmt(n2)}`;
+      res.style.display = 'block';
+    }
+  } catch(e) { bkStatus('Request failed: ' + e.message, 'err'); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+// -- Payout history ------------------------------------------------------------
+
+function togglePayoutHistory() {
+  const body = document.getElementById('payout-history-body');
+  const chev = document.getElementById('payout-history-chevron');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+}
+
+function _updatePayoutHistory(history) {
+  const tbody = document.getElementById('payout-history-tbody');
+  if (!tbody) return;
+  if (!history || !history.length) {
+    tbody.innerHTML = `<tr><td colspan="3" style="color:var(--text-sub);padding:16px 10px;">No payouts recorded.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = history.map(p =>
+    `<tr>
+      <td style="font-family:monospace;font-size:13px;">${p.address}</td>
+      <td style="font-family:monospace;">${p.bdag.toFixed(8)}</td>
+      <td style="color:var(--text-muted);white-space:nowrap;">${p.time}</td>
+    </tr>`
+  ).join('');
+}
+
+// -- Maintenance config --------------------------------------------------------
+
+async function loadMaintenanceConfig() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/maintenance/config');
+    const j = await r.json();
+    if (j.error) return;
+    document.getElementById('maint-enabled').checked = !!j.enabled;
+    document.getElementById('maint-time').value = j.time ?? '03:00';
+    const days = j.days ?? [];
+    document.querySelectorAll('#maint-days input[type=checkbox]').forEach(cb => {
+      cb.checked = days.includes(cb.value);
+    });
+    const containers = j.containers ?? [];
+    document.querySelectorAll('#maint-containers input[type=checkbox]').forEach(cb => {
+      cb.checked = containers.includes(cb.value);
+    });
+  } catch(e) { /* non-critical */ }
+}
+
+async function saveMaintenanceConfig() {
+  if (!IS_SERVER) return;
+  const enabled = document.getElementById('maint-enabled').checked;
+  const time    = document.getElementById('maint-time').value || '03:00';
+  const days = [];
+  document.querySelectorAll('#maint-days input[type=checkbox]:checked').forEach(cb => days.push(cb.value));
+  const containers = [];
+  document.querySelectorAll('#maint-containers input[type=checkbox]:checked').forEach(cb => containers.push(cb.value));
+  const st = document.getElementById('maint-status');
+  st.textContent = 'Saving...'; st.className = 'ctrl-status warn';
+  try {
+    const r = await fetch('/maintenance/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, time, days, containers })
+    });
+    const j = await r.json();
+    st.textContent = j.ok ? (enabled ? 'Maintenance schedule saved and task registered.' : 'Maintenance disabled.') : ('Failed: ' + j.error);
+    st.className = 'ctrl-status ' + (j.ok ? 'ok' : 'err');
+  } catch(e) { st.textContent = 'Request failed: ' + e.message; st.className = 'ctrl-status err'; }
+}
+
+// -- Payout config -------------------------------------------------------------
+
+async function fetchPayoutConfig() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/payout/config');
+    const j = await r.json();
+    const el = document.getElementById('payout-min');
+    if (el && j.min_payout != null) el.value = j.min_payout;
+  } catch(e) { /* non-critical */ }
+}
+async function savePayoutConfig() {
+  if (!IS_SERVER) return;
+  const val = parseFloat(document.getElementById('payout-min').value);
+  if (!val || val <= 0) return;
+  const st = document.getElementById('payout-status');
+  try {
+    const r = await fetch('/payout/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ min_payout: val })
+    });
+    const j = await r.json();
+    if (st) { st.textContent = j.ok ? 'Saved.' : 'Failed.'; setTimeout(() => { st.textContent = ''; }, 3000); }
+  } catch(e) {
+    if (st) { st.textContent = 'Error.'; setTimeout(() => { st.textContent = ''; }, 3000); }
+  }
+}
+
+// -- Main loop -----------------------------------------------------------------
+
+let _lastFreezeState = false;
+let _lastPeerCount   = null;
+
+function updateUptime() {
+  const s = Math.floor((Date.now() - startTime) / 1000);
+  set('s-uptime', Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm ' + (s%60) + 's');
+  if (_lastFetchTime) {
+    const age = Math.floor((Date.now() - _lastFetchTime) / 1000);
+    const tsEl = document.getElementById('bd-ts');
+    if (tsEl) {
+      const t = new Date(_lastFetchTime).toLocaleTimeString();
+      tsEl.textContent = age < 5 ? 'Just updated' : `Updated ${age}s ago  (${t})`;
+      tsEl.style.color = age > 90 ? '#e06060' : '';
+    }
+  }
+}
+
+let fetching = false;
+let _refreshCount = 0;
+let _lastFetchTime = 0;
+
+// Returns true if a field still shows its unfilled placeholder value
+function _isBlank(id) {
+  const el = document.getElementById(id);
+  if (!el) return false;
+  const t = (el.textContent || '').trim();
+  return !t || t === '?' || t === '?' || t === 'N/A' || t === 'Unavailable';
+}
+
+async function fetchAll() {
+  if (fetching) return;
+  fetching = true;
+  _refreshCount++;
+  const safety = setTimeout(() => { fetching = false; }, 20000);
+  try {
+    // -- Tier 1: every refresh ------------------------------------------------
+    const always = [
+      fetchNetworkAndPeers(), fetchBestBlock(),
+      fetchSyncState(), fetchMempool(),
+      fetchContainers(), fetchResources(),
+      fetchPoolStats(), fetchMinerMetrics(), fetchHAProxyStatus()
+    ];
+
+    // -- Tier 2: every 5 refreshes, OR immediately if field still blank --------
+    const isOccasional = _refreshCount % 5 === 0;
+    const occasional = [
+      ...(isOccasional || _isBlank('m-balance')    ? [fetchBalance()]    : []),
+      ...(isOccasional || _isBlank('m-price')      ? [fetchCoinPrice()]  : []),
+      ...(isOccasional || _isBlank('s-difficulty') ? [fetchDifficulty()] : []),
+      ...(isOccasional || _isBlank('m-pubip')      ? [fetchPublicIP()]   : []),
+      // Node ID is loaded on demand via the Load ID button, not auto-refreshed.
+      ...(isOccasional                              ? [fetchAlertHistory()]: []),
+    ];
+
+    await Promise.allSettled([...always, ...occasional]);
+    _lastFetchTime = Date.now();
+    set('bd-ts', 'Updated: ' + new Date().toLocaleTimeString());
+  } finally {
+    clearTimeout(safety);
+    fetching = false;
+  }
+}
+
+// -- Tier 3: once on load, not part of auto-refresh ---------------------------
+async function fetchStaticConfig() {
+  await Promise.allSettled([
+    fetchPublicIP(), fetchBackupSchedule(),
+    fetchBackupConfig(), fetchPayoutConfig(), loadPeers()
+  ]);
+}
+
+initNotifications();
+setRefresh(30);
+loadAlertConfig();
+loadMaintenanceConfig();
+_restoreBackupScheduleLocal();
+try { switchView(localStorage.getItem('bdag-view') || 'adv'); } catch(e) { switchView('adv'); }
+fetchPeersCount();
+fetchAll();
+// Tier 2 once on load so balance/price/etc show immediately
+fetchBalance(); fetchCoinPrice(); fetchDifficulty(); fetchMinerMetrics(); fetchAlertHistory();
+
+// Tier 3 once on load ? static config that doesn't auto-refresh
+fetchStaticConfig();
+setInterval(updateUptime, 1000);
+</script>
+<!-- -- Config Modal ---------------------------------------------------------- -->
+<div id="cfg-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg-card);border-radius:12px;padding:28px;width:min(560px,95vw);box-shadow:0 8px 32px rgba(0,0,0,0.25);max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <span style="font-size:16px;font-weight:600;"><i class="ti ti-settings"></i> Configuration</span>
+      <button onclick="closeConfigModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);">&#x2715;</button>
+    </div>
+
+    <label>RPC endpoint</label>
+    <input type="text" id="cfg-rpc" value="http://localhost:38131" />
+
+    <div class="config-row">
+      <div>
+        <label>RPC username</label>
+        <input type="text" id="cfg-user" value="test" />
+      </div>
+      <div>
+        <label>RPC password</label>
+        <input type="password" id="cfg-pass" value="test" />
+      </div>
+    </div>
+
+    <label>Mining wallet address</label>
+    <input type="text" id="cfg-wallet" value="" placeholder="0x..." />
+
+    <div class="config-row" style="margin-top:4px;">
+      <div>
+        <label>Postgres user</label>
+        <input type="text" id="cfg-pg-user" value="test" />
+      </div>
+      <div>
+        <label>Postgres password</label>
+        <input type="password" id="cfg-pg-pass" value="test" />
+      </div>
+    </div>
+
+    <div class="config-row">
+      <div>
+        <label>Postgres database</label>
+        <input type="text" id="cfg-pg-db" value="pool" />
+      </div>
+    </div>
+
+    <div>
+      <label>PG URL <span style="font-size:0.8em;color:#888;">(auto-built)</span></label>
+      <input type="text" id="cfg-pg-url" readonly style="background:var(--bg-input);color:var(--text-muted);font-family:monospace;font-size:13px;width:100%;box-sizing:border-box;" />
+    </div>
+
+    <div class="config-row" style="margin-top:4px;">
+      <div>
+        <label>Pool fee %</label>
+        <input type="number" id="cfg-pool-fee" value="2.0" step="0.1" min="0" max="100" />
+      </div>
+      <div>
+        <label>Starting difficulty</label>
+        <input type="number" id="cfg-pool-diff" value="8192" step="1" min="1" />
+      </div>
+    </div>
+
+    <div class="config-row">
+      <div>
+        <label>Stratum port</label>
+        <input type="number" id="cfg-pool-port" value="3334" step="1" min="1" max="65535" />
+      </div>
+      <div>
+        <label>Pool password</label>
+        <input type="text" id="cfg-pool-pass" value="1234" />
+      </div>
+    </div>
+
+    <div style="padding:8px 12px;background:#fff8e1;border-left:4px solid #f9a825;font-size:0.82em;color:#666;margin-bottom:14px;border-radius:4px;">
+      <strong>Automatic payouts:</strong> Set <code>POOL_PRIVATE_KEY</code> manually in
+      <code>C:\blockdag node\.env</code> and <code>asic-pool\.env</code>, then restart.
+      Never enter your private key into a web interface.
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="closeConfigModal()">Cancel</button>
+      <button class="btn-blue" onclick="applyConfig()" id="cfg-apply-btn"><i class="ti ti-check"></i> Apply</button>
+    </div>
+    <div id="cfg-status" class="ctrl-status" style="margin-top:10px;"></div>
+  </div>
+</div>
+</body>
+</html>
