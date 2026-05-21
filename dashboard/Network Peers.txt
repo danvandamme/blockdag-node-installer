@@ -20,3 +20,21 @@ hello you can add all these
 /ip4/204.236.141.121/tcp/8150/p2p/16Uiu2HAm5qppgbBCjVpTN5nKtjEU5KsSbs2gz4S9uPiSWVSGfNh1
 
 /ip4/13.57.132.47/tcp/8150/p2p/16Uiu2HAmDynYpWjWmgVGf9qVWvDdLnJ3ybVgDmFexizR4zMereus
+
+/ip4/52.76.239.180/tcp/8150/p2p/16Uiu2HAmMq9zCdQzbUiqzg4dN49cvFck6c8HhjmbBpSChT4ND4Sq
+/ip4/16.28.133.168/tcp/8151/p2p/16Uiu2HAm9UcTayJDSajjJYsWwVaN2qqGeczcs9kXse3dMdvGDRjz
+
+/ip4/3.141.142.102/tcp/8150/p2p/16Uiu2HAm3HbfcR9UNGGec1npp4dzU7oJUpvDsiHK3bnuJK4tWzfV
+/ip4/16.28.133.168/tcp/8153/p2p/16Uiu2HAmDgTmV1nXEi1kBnf2NYRf9Pga2yK91zSMsgmhq1gdRZoo
+
+/ip4/3.218.54.171/tcp/8150/p2p/16Uiu2HAmUZBdpuutiLPuru1UQnX8hf6GyvG7yU2B832sYjvNhmQG
+/ip4/92.99.174.52/tcp/8152/p2p/16Uiu2HAm34g8SLqbQuoH9oiJf9YnWVK5GCpTkpz3YYn1AYiavzzP
+
+
+
+
+/ip4/3.214.202.100/tcp/8150/p2p/16Uiu2HAmGVzwYkqmGjnpniD9PZx7GPoDcMudxjNSzbFzBgFviRac
+/ip4/3.6.3.109/tcp/8150/p2p/16Uiu2HAm233S37d2Jtw5PPYe6dpwqUwNKpgvbiuNuV6DJ1QtbrSW
+/ip4/54.151.18.92/tcp/8150/p2p/16Uiu2HAmVm91o1JXS2C7P6uTVuVX5empgnRtzuK4UaC8fHmePbKP
+/ip4/52.8.54.60/tcp/8150/p2p/16Uiu2HAkzUWr4YUM7mAhLdCVZgFoV9He6aQzKTyWWrJ7SWQKRTN7
+

@@ -91,6 +91,89 @@ def _dagtech_worker_map():
     return mapping
 
 
+# ── Pool log regex patterns (for per-worker extraction) ──────────────────────
+_POOL_LOG_TS_RE  = re.compile(r"^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})")
+_POOL_AUTH_RE    = re.compile(r"\[((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\]\s+authorize accepted user=([^\s]+)")
+_POOL_PUSHDIF_RE = re.compile(r"PUSHDIF\s+->\s+((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\s+mining\.set_difficulty\s+([0-9.]+)")
+_POOL_SHARE_RE   = re.compile(r"valid share accepted\s+[0-9.]+\s+[^0-9]+[0-9]+\s+worker=([^\s]+)")
+_POOL_ANSI_RE    = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _parse_pool_workers():
+    """
+    Parse the asic-pool container logs to build a per-worker list with real
+    worker names, IPs, and assigned difficulty.  Returns [] on any error so
+    callers can fall back gracefully.
+
+    Parsing strategy (sequential, single pass):
+      AUTH_ACCEPT   → new worker entry keyed by 'wallet.workername'
+      PUSHDIF       → assigns difficulty to the worker on that IP:port
+      valid share   → increments accepted count, updates last_active timestamp
+    """
+    try:
+        r = subprocess.run(
+            ["docker", "logs", "--tail", "800", "asic-pool"],
+            capture_output=True, text=True, timeout=10)
+        lines = [_POOL_ANSI_RE.sub("", l) for l in (r.stdout + r.stderr).splitlines()]
+    except Exception:
+        return []
+
+    workers    = {}   # user_str → miner dict
+    ip_to_user = {}   # "ip:port" → user_str (most recent auth on that connection)
+
+    for line in lines:
+        ts_str = ""
+        ts_m = _POOL_LOG_TS_RE.match(line)
+        if ts_m:
+            raw = ts_m.group(1)                           # "2024/01/15 14:30:00"
+            ts_str = raw[:10].replace("/", "-") + raw[10:16]  # "2024-01-15 14:30"
+
+        auth = _POOL_AUTH_RE.search(line)
+        if auth:
+            ip, port, user = auth.group(1), auth.group(2), auth.group(3)
+            ip_to_user[f"{ip}:{port}"] = user
+            dot = user.rfind(".")
+            wallet = user[:dot] if dot > 0 else user
+            wname  = user[dot + 1:] if dot > 0 else ""
+            if user not in workers:
+                workers[user] = {
+                    "address":      wallet,
+                    "worker":       wname,
+                    "ip":           ip,
+                    "difficulty":   0,
+                    "last_active":  ts_str,
+                    "accepted":     0,
+                    "rejected":     0,
+                    "hashrate_mhs": 0,
+                }
+            else:
+                # Reconnect — refresh IP and bump auth timestamp
+                workers[user]["ip"] = ip
+                if ts_str > workers[user]["last_active"]:
+                    workers[user]["last_active"] = ts_str
+            continue
+
+        diff_m = _POOL_PUSHDIF_RE.search(line)
+        if diff_m:
+            ip, port = diff_m.group(1), diff_m.group(2)
+            user = ip_to_user.get(f"{ip}:{port}")
+            if user and user in workers:
+                workers[user]["difficulty"] = float(diff_m.group(3))
+            continue
+
+        share = _POOL_SHARE_RE.search(line)
+        if share:
+            user = share.group(1)
+            if user in workers:
+                workers[user]["accepted"] += 1
+                if ts_str > workers[user]["last_active"]:
+                    workers[user]["last_active"] = ts_str
+
+    return sorted(workers.values(),
+                  key=lambda x: x.get("last_active") or "",
+                  reverse=True)
+
+
 def _managed_peers():
     """Return list of /ip4/... strings from the managed peer file, seeding from PEERS_FILE on first use."""
     if not PEERS_MANAGED_FILE.exists():
@@ -603,7 +686,7 @@ class Handler(BaseHTTPRequestHandler):
                 "SELECT hash, height, status, "
                 "to_char(created_at,'MM-DD HH24:MI') "
                 "FROM blocks ORDER BY created_at DESC LIMIT 5")
-            recent = [{"hash": r[0][:14] + "…", "height": int(r[1]),
+            recent = [{"hash": str(r[0]), "height": int(r[1]),
                        "status": r[2], "time": r[3]}
                       for r in rb if len(r) >= 4]
 
@@ -673,56 +756,61 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
-            # Per-miner stats from miners table (shares are tracked in-memory by the pool,
-            # not persisted to the DB, so share counts and hashrate are unavailable here)
-            miners_list = []
-            worker_map = _dagtech_worker_map()
+            # ── Hashrate per wallet from DB shares (last 10 min) ─────────────
+            hashrate_by_addr = {}
             try:
-                # Try to include the IP column; fall back if the column doesn't exist.
-                try:
-                    mr = psql(
-                        "SELECT address, last_active, ip "
-                        "FROM miners "
-                        "WHERE last_active > NOW() - INTERVAL '24 hours' "
-                        "ORDER BY last_active DESC LIMIT 100")
-                    has_ip = True
-                except Exception:
-                    mr = psql(
-                        "SELECT address, last_active "
-                        "FROM miners "
-                        "WHERE last_active > NOW() - INTERVAL '24 hours' "
-                        "ORDER BY last_active DESC LIMIT 100")
-                    has_ip = False
-                hashrate_by_addr = {}
-                try:
-                    hr_rows = psql(
-                        "SELECT address, COALESCE(SUM(difficulty),0) "
-                        "FROM shares "
-                        "WHERE created_at > NOW() - INTERVAL '10 minutes' AND is_valid = TRUE "
-                        "GROUP BY address")
-                    for hr in hr_rows:
-                        if len(hr) >= 2 and float(hr[1]) > 0:
-                            hashrate_by_addr[str(hr[0]).lower()] = round(float(hr[1]) / 600 / 1e6, 4)
-                except Exception:
-                    pass
-
-                for row in mr:
-                    if len(row) >= 2:
-                        addr = str(row[0])
-                        worker = worker_map.get(addr.lower(), "")
-                        raw_ip = str(row[2]) if has_ip and len(row) >= 3 and row[2] is not None else ""
-                        ip = raw_ip.split(":")[0] if raw_ip else ""
-                        miners_list.append({
-                            "address":      addr,
-                            "worker":       worker,
-                            "ip":           ip,
-                            "last_active":  str(row[1])[:16],
-                            "accepted":     0,
-                            "rejected":     0,
-                            "hashrate_mhs": hashrate_by_addr.get(addr.lower(), 0),
-                        })
+                hr_rows = psql(
+                    "SELECT address, COALESCE(SUM(difficulty),0) "
+                    "FROM shares "
+                    "WHERE created_at > NOW() - INTERVAL '10 minutes' AND is_valid = TRUE "
+                    "GROUP BY address")
+                for hr in hr_rows:
+                    if len(hr) >= 2 and float(hr[1]) > 0:
+                        hashrate_by_addr[str(hr[0]).lower()] = round(float(hr[1]) / 600 / 1e6, 4)
             except Exception:
                 pass
+
+            # ── Per-worker list from pool logs (shows real worker names + diff) ─
+            miners_list = _parse_pool_workers()
+            for w in miners_list:
+                w["hashrate_mhs"] = hashrate_by_addr.get(w["address"].lower(), 0)
+
+            # ── Fall back to DB miners table if log parse returned nothing ──────
+            if not miners_list:
+                worker_map = _dagtech_worker_map()
+                try:
+                    try:
+                        mr = psql(
+                            "SELECT address, last_active, ip "
+                            "FROM miners "
+                            "WHERE last_active > NOW() - INTERVAL '24 hours' "
+                            "ORDER BY last_active DESC LIMIT 100")
+                        has_ip = True
+                    except Exception:
+                        mr = psql(
+                            "SELECT address, last_active "
+                            "FROM miners "
+                            "WHERE last_active > NOW() - INTERVAL '24 hours' "
+                            "ORDER BY last_active DESC LIMIT 100")
+                        has_ip = False
+                    for row in mr:
+                        if len(row) >= 2:
+                            addr = str(row[0])
+                            worker = worker_map.get(addr.lower(), "")
+                            raw_ip = str(row[2]) if has_ip and len(row) >= 3 and row[2] is not None else ""
+                            ip = raw_ip.split(":")[0] if raw_ip else ""
+                            miners_list.append({
+                                "address":      addr,
+                                "worker":       worker,
+                                "ip":           ip,
+                                "difficulty":   0,
+                                "last_active":  str(row[1])[:16],
+                                "accepted":     0,
+                                "rejected":     0,
+                                "hashrate_mhs": hashrate_by_addr.get(addr.lower(), 0),
+                            })
+                except Exception:
+                    pass
 
             self._json({
                 "total_blocks":   total_blocks,

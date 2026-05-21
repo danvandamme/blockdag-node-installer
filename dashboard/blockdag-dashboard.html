@@ -873,14 +873,15 @@
             <th>Worker address</th>
             <th>IP address</th>
             <th>Worker name</th>
+            <th title="Pool-assigned vardiff for this worker">Difficulty</th>
             <th>Hashrate (10m)</th>
-            <th>Accepted</th>
+            <th title="Shares counted from recent pool log">Shares</th>
             <th>Rejected</th>
             <th>Last seen</th>
           </tr>
         </thead>
         <tbody id="workers-tbody">
-          <tr><td colspan="7" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
+          <tr><td colspan="8" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1481,13 +1482,19 @@ async function fetchPoolStats() {
     if (recent.length) {
       const cls = { MATURE: 'ok', ORPHANED: 'err', PENDING: 'warn', PAID: 'ok' };
       document.getElementById('p-recent').style.display = 'block';
-      document.getElementById('p-recent-rows').innerHTML = recent.map(b => `
+      document.getElementById('p-recent-rows').innerHTML = recent.map(b => {
+        const shortHash = b.hash.length > 20 ? b.hash.slice(0, 12) + '…' + b.hash.slice(-8) : b.hash;
+        return `
         <div class="container-row">
-          <span style="font-family:monospace;font-size:12px;flex:1">${b.hash}</span>
+          <span style="font-family:monospace;font-size:12px;flex:1;cursor:pointer;"
+                title="Click to copy full block ID&#10;${b.hash}"
+                onclick="navigator.clipboard.writeText('${b.hash}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})"
+                >${shortHash}</span>
           <span style="font-size:12px;color:#666;margin:0 12px">#${b.height.toLocaleString()}</span>
           <span class="badge badge-${cls[b.status]||'warn'}" style="margin-right:8px">${b.status}</span>
           <span style="font-size:11px;color:#999;white-space:nowrap">${b.time}</span>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     }
   } catch(e) { /* non-critical */ }
 }
@@ -1542,29 +1549,31 @@ async function fetchMinerMetrics() {
         ? `<span style="color:var(--text);font-weight:500;">${worker}</span>`
         : `<span style="color:var(--text-dim);">?</span>`;
       if (tbody.querySelector('td[colspan]')) {
-        // "No workers" placeholder row - replace with real miner row
-        // IP not available from miner metrics (only from pool DB), show dash
+        // "No workers" placeholder row — replace with real miner row
+        // IP and difficulty not available from miner metrics (only from pool log), show dash
+        // Column layout: 0=address, 1=ip, 2=worker, 3=difficulty, 4=hashrate, 5=shares, 6=rejected, 7=last seen
         tbody.innerHTML = `<tr>
           <td style="font-family:monospace;font-size:13px;">${addrShort}</td>
           <td><span style="color:var(--text-sub);">&#8212;</span></td>
           <td>${workerCell}</td>
+          <td><span style="color:var(--text-sub);">&#8212;</span></td>
           <td>${hrStr}</td>
           <td style="color:#4caf70;">${acc2.toLocaleString()}</td>
           <td style="color:${rejCol2};">${rej2}${rejPct2 > 0 ? ' (' + rejPct2 + '%)' : ''}</td>
           <td style="color:var(--text-muted);">?</td>
         </tr>`;
       } else {
-        // Find the matching row and patch its live stats
-        // Column layout: 0=address, 1=ip, 2=worker, 3=hashrate, 4=accepted, 5=rejected, 6=last seen
+        // Find the matching row and patch its live hashrate + share stats
+        // Column layout: 0=address, 1=ip, 2=worker, 3=difficulty, 4=hashrate, 5=shares, 6=rejected, 7=last seen
         tbody.querySelectorAll('tr').forEach(tr => {
           const addrTd = tr.querySelector('td:first-child');
           if (addrTd && j.wallet_full.startsWith(addrTd.textContent.trim().replace('...', '').slice(0, 10))) {
-            if (tr.cells.length >= 6) {
-              tr.cells[3].textContent = hrStr;
-              tr.cells[4].textContent = acc2.toLocaleString();
-              tr.cells[4].style.color = '#4caf70';
-              tr.cells[5].innerHTML   = rej2 + (rejPct2 > 0 ? ' (' + rejPct2 + '%)' : '');
-              tr.cells[5].style.color = rejCol2;
+            if (tr.cells.length >= 7) {
+              tr.cells[4].textContent = hrStr;
+              tr.cells[5].textContent = acc2.toLocaleString();
+              tr.cells[5].style.color = '#4caf70';
+              tr.cells[6].innerHTML   = rej2 + (rejPct2 > 0 ? ' (' + rejPct2 + '%)' : '');
+              tr.cells[6].style.color = rejCol2;
             }
           }
         });
@@ -2048,13 +2057,13 @@ function _updateWorkersTable(miners) {
   const note  = document.getElementById('workers-note');
   if (!tbody) return;
   if (!miners || miners.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--text-sub);padding:16px 10px;">No workers active in the last 24 hours.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--text-sub);padding:16px 10px;">No workers active in the last 24 hours.</td></tr>`;
     return;
   }
   if (note) note.style.display = 'none';
   tbody.innerHTML = miners.map(m => {
-    const tot    = m.accepted + m.rejected;
-    const rejPct = tot > 0 ? Math.round(m.rejected / tot * 100) : 0;
+    const tot    = (m.accepted || 0) + (m.rejected || 0);
+    const rejPct = tot > 0 ? Math.round((m.rejected || 0) / tot * 100) : 0;
     const hrStr  = m.hashrate_mhs > 0 ? m.hashrate_mhs.toFixed(4) + ' MH/s' : '—';
     const rejCol = rejPct > 5 ? '#e06060' : 'inherit';
     const addrShort = m.address && m.address.length > 14
@@ -2066,14 +2075,21 @@ function _updateWorkersTable(miners) {
     const ipCell = ipOk
       ? `<span style="font-family:monospace;font-size:12px;">${m.ip}</span>`
       : `<span style="color:var(--text-sub);">&#8212;</span>`;
+    const diffVal = m.difficulty > 0
+      ? m.difficulty.toLocaleString(undefined, {maximumFractionDigits: 0})
+      : '<span style="color:var(--text-sub);">—</span>';
+    const accStr = (m.accepted || 0) > 0
+      ? (m.accepted).toLocaleString()
+      : '<span style="color:var(--text-sub);">0</span>';
     return `<tr>
       <td title="${m.address}" style="font-family:monospace;font-size:13px;cursor:help;">${addrShort}</td>
       <td>${ipCell}</td>
       <td>${workerCell}</td>
+      <td style="color:var(--text-muted);font-variant-numeric:tabular-nums;">${diffVal}</td>
       <td>${hrStr}</td>
-      <td style="color:#4caf70;">${m.accepted.toLocaleString()}</td>
-      <td style="color:${rejCol};">${m.rejected}${rejPct > 0 ? ' (' + rejPct + '%)' : ''}</td>
-      <td style="color:var(--text-muted);">${m.last_active}</td>
+      <td style="color:#4caf70;">${accStr}</td>
+      <td style="color:${rejCol};">${m.rejected || 0}${rejPct > 0 ? ' (' + rejPct + '%)' : ''}</td>
+      <td style="color:var(--text-muted);">${m.last_active || '—'}</td>
     </tr>`;
   }).join('');
 }
