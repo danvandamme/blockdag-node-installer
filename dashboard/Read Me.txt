@@ -2,3 +2,17 @@ BlockDAG Dashboad
 
 1- install python
 https://www.python.org/downloads/windows/
+
+BlockDAG Dashboad
+
+1- install python
+https://www.python.org/downloads/windows/
+
+2. Install the node (just double click on it)
+\Node Installer\install-node-windows
+
+after install is done, go configure your node.
+you will want to MANUALY enter in your PRIVATE KEY into the two .env files.
+the second one is on asic-pool folder
+
+3. blockdag-dashboard-server (in the dashboard folder) runs the dashboard. it needs to be running before web access to node dashboard. there should have been a desktop shortcut installed. 

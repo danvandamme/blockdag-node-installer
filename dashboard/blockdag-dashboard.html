@@ -20,14 +20,16 @@
     body { font-family: system-ui, sans-serif; background: var(--bg-page); color: var(--text); padding: 24px; min-height: 100vh; transition: background .2s, color .2s; }
     h1 { font-size: 22px; font-weight: 500; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
     .grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-    .metric { background: var(--bg-metric); border-radius: 7px; padding: 10px 14px; display: flex; align-items: flex-start; gap: 10px; flex: 1; min-width: 170px; overflow: hidden; }
-    .metric-label { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; white-space: nowrap; flex-shrink: 0; padding-top: 2px; }
-    .metric-value { font-size: 18px; font-weight: 600; white-space: nowrap; }
-    .metric-sub { font-size: 13px; color: var(--text-sub); white-space: normal; word-break: break-word; }
+    .metric { background: var(--bg-metric); border-radius: 7px; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 140px; overflow: hidden; }
+    .metric-label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; white-space: nowrap; margin-bottom: 2px; }
+    .metric-value { font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .metric-sub { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sections-grid { columns: 3; column-gap: 12px; margin-bottom: 12px; }
     @media (max-width: 1000px) { .sections-grid { columns: 2; } }
     @media (max-width: 600px)  { .sections-grid { columns: 1; } }
     @media (max-width: 700px)  { #node-panels-grid { grid-template-columns: 1fr !important; } }
+    @media (max-width: 1100px) { #panels-top-grid { grid-template-columns: 1fr 1fr !important; } }
+    @media (max-width: 700px)  { #panels-top-grid, #panels-bottom-grid { grid-template-columns: 1fr !important; } }
     .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 12px; break-inside: avoid; }
     .section-title { font-size: 14px; font-weight: 500; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
     .row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border-row); font-size: 15px; }
@@ -175,7 +177,7 @@
       <span class="row-value" id="bv-n1-age">&mdash;</span>
     </div>
     <div class="row" style="padding:7px 0;">
-      <span class="row-label"><i class="ti ti-fingerprint"></i> Node ID</span>
+      <span class="row-label" title="Libp2p peer ID (16Uiu2H...)"><i class="ti ti-fingerprint"></i> Node ID</span>
       <span class="row-value" style="display:flex;align-items:center;gap:6px;">
         <span id="bv-n1-nodeid" title="" style="cursor:help;overflow:visible;">&mdash;</span>
         <button id="bv-load-nodeid-btn" onclick="fetchNodeId()" title="Scan startup log for node ID" style="font-size:11px;padding:2px 7px;"><i class="ti ti-fingerprint"></i> Load ID</button>
@@ -211,52 +213,38 @@
 <div class="grid">
   <div class="metric">
     <div class="metric-label"><i class="ti ti-cube"></i> Blocks</div>
-    <div style="margin-left:auto;text-align:right;min-width:0;">
-      <div class="metric-value" id="m-blocks" style="font-size:15px;">&mdash;</div>
-      <div class="metric-sub">Chain height</div>
-    </div>
+    <div class="metric-value" id="m-blocks" style="font-size:15px;">&mdash;</div>
+    <div class="metric-sub">Chain height</div>
   </div>
   <div class="metric">
     <div class="metric-label"><i class="ti ti-users"></i> Peers</div>
-    <div style="margin-left:auto;text-align:right;min-width:0;">
-      <div class="metric-value" id="m-peers">&mdash;</div>
-      <div class="metric-sub">Connected</div>
-    </div>
+    <div class="metric-value" id="m-peers">&mdash;</div>
+    <div class="metric-sub">Connected</div>
   </div>
   <div class="metric">
     <div class="metric-label"><i class="ti ti-tag"></i> Version</div>
-    <div style="margin-left:auto;text-align:right;min-width:0;">
-      <div class="metric-value" id="m-version" style="font-size:14px;">&mdash;</div>
-      <div class="metric-sub">Node image</div>
-    </div>
+    <div class="metric-value" id="m-installer-version" style="font-size:15px;display:none;"></div>
+    <div class="metric-sub">node image &nbsp;<span id="m-version" style="color:var(--text);">&mdash;</span></div>
   </div>
   <div class="metric">
     <div class="metric-label"><i class="ti ti-bolt"></i> Pool hashrate</div>
-    <div style="margin-left:auto;text-align:right;min-width:0;">
-      <div class="metric-value" id="m-hashrate">&mdash;</div>
-      <div class="metric-sub">MH/s</div>
-    </div>
+    <div class="metric-value" id="m-hashrate" style="font-size:16px;">&mdash;</div>
+    <div class="metric-sub">10 min avg</div>
   </div>
   <div class="metric">
     <div class="metric-label"><i class="ti ti-database"></i> Chain data</div>
-    <div style="margin-left:auto;text-align:right;min-width:0;">
-      <div class="metric-value" id="m-diskdata">&mdash;</div>
-      <div class="metric-sub" id="m-diskfree">&mdash;</div>
-    </div>
+    <div class="metric-value" id="m-diskdata">&mdash;</div>
+    <div class="metric-sub" id="m-diskfree">&mdash;</div>
   </div>
   <div class="metric">
     <div class="metric-label"><i class="ti ti-coin"></i> Balance</div>
-    <div style="margin-left:auto;text-align:right;min-width:0;">
-      <div class="metric-value" id="m-balance">&mdash;</div>
-      <div class="metric-sub">BDAG</div>
-    </div>
+    <div class="metric-value" id="m-balance">&mdash;</div>
+    <div class="metric-sub">BDAG</div>
   </div>
   <div class="metric">
     <div class="metric-label"><i class="ti ti-trending-up"></i> BDAG price</div>
-    <div style="margin-left:auto;text-align:right;min-width:0;">
-      <div class="metric-value" id="m-price">&mdash;</div>
-      <div class="metric-sub">USD</div>
-    </div>
+    <div class="metric-value" id="m-price">&mdash;</div>
+    <div class="metric-sub">USD</div>
   </div>
 </div>
 
@@ -282,7 +270,7 @@
           <span class="row-value" id="n1-age">&mdash;</span>
         </div>
         <div class="row" style="padding:5px 0;">
-          <span class="row-label"><i class="ti ti-fingerprint"></i> Node ID</span>
+          <span class="row-label" title="Libp2p peer ID (16Uiu2H...)"><i class="ti ti-fingerprint"></i> Node ID</span>
           <span class="row-value" style="display:flex;align-items:center;gap:6px;">
             <span id="n1-nodeid" title="" style="cursor:help;overflow:visible;">&mdash;</span>
             <button id="adv-load-nodeid-btn" onclick="fetchNodeId()" title="Scan startup log for node ID" style="font-size:11px;padding:2px 7px;"><i class="ti ti-fingerprint"></i> Load ID</button>
@@ -308,7 +296,7 @@
           <span class="row-value" id="n2-age">&mdash;</span>
         </div>
         <div class="row" style="padding:5px 0;">
-          <span class="row-label"><i class="ti ti-fingerprint"></i> Node ID</span>
+          <span class="row-label" title="Libp2p peer ID (16Uiu2H...)"><i class="ti ti-fingerprint"></i> Node ID</span>
           <span class="row-value" style="display:flex;align-items:center;gap:6px;">
             <span id="n2-nodeid" title="" style="cursor:help;overflow:visible;">&mdash;</span>
           </span>
@@ -419,15 +407,15 @@
       <button class="btn-blue" onclick="savePayoutConfig()"><i class="ti ti-device-floppy"></i> Save</button>
       <span id="payout-status" style="font-size:13px;color:var(--text-sub);"></span>
     </div>
-    <div id="p-recent" style="margin-top:10px;display:none;">
-      <div style="font-size:12px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Recent blocks</div>
-      <div id="p-recent-rows"></div>
-    </div>
   </div>
 
 </div>
 
-<div class="sections-grid">
+<!-- ── Top 3-column grid: [Node Control + Containers] | [Resources] | [Machine + Wallet] ── -->
+<div id="panels-top-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;align-items:start;">
+
+<!-- Column 1: Node Control + Containers -->
+<div style="display:flex;flex-direction:column;gap:12px;">
 
 <div class="section">
   <p class="section-title"><i class="ti ti-terminal-2"></i> Node control</p>
@@ -458,6 +446,9 @@
   <p class="note" id="container-note" style="display:none;">Container status requires the dashboard server. Run <strong>blockdag-dashboard-server.py</strong> and open http://localhost:8765</p>
 </div>
 
+</div><!-- end col-1 -->
+
+<!-- Column 2: Resources -->
 <div class="section">
   <p class="section-title"><i class="ti ti-cpu"></i> Resources</p>
   <div class="row">
@@ -496,7 +487,10 @@
     <span class="row-label"><i class="ti ti-device-floppy"></i> Backup drive free</span>
     <span id="r-backup-disk"><span class="badge badge-warn">&mdash;</span></span>
   </div>
-</div>
+</div><!-- end col-2 Resources -->
+
+<!-- Column 3: Machine + Wallet stacked -->
+<div style="display:flex;flex-direction:column;gap:12px;">
 
 <div class="section">
   <p class="section-title"><i class="ti ti-world"></i> Machine</p>
@@ -528,74 +522,22 @@
     <span class="row-label"><i class="ti ti-currency-dollar"></i> USD value</span>
     <span class="row-value" id="w-usd">&mdash;</span>
   </div>
-</div>
+</div><!-- end Wallet -->
 
+</div><!-- end col-3 -->
+
+</div><!-- end panels-top-grid -->
+
+<!-- ── Bottom 3-column grid: Backup | Maintenance | Alerts (all collapsible) ── -->
+<div id="panels-bottom-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;align-items:start;">
+
+<!-- Backup (collapsible) -->
 <div class="section">
-  <p class="section-title"><i class="ti ti-bell"></i> Alerts</p>
-  <p class="note" style="margin-bottom:12px;">Get notified on Discord, Telegram, or your browser when the pool freezes or peer count drops.</p>
-  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-row);">
-    <button id="notif-btn" onclick="toggleNotifications()"><i class="ti ti-bell" id="notif-icon"></i> <span id="notif-label">Enable browser alerts</span></button>
-    <span id="notif-status" style="font-size:13px;color:var(--text-sub);"></span>
+  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('backup')">
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-database-export"></i> Backup</p>
+    <i class="ti ti-chevron-down" id="backup-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
   </div>
-
-  <label>Discord webhook URL</label>
-  <input type="text" id="al-discord" placeholder="https://discord.com/api/webhooks/..." />
-
-  <label>Telegram bot token</label>
-  <input type="text" id="al-tg-token" placeholder="123456789:AABBccdd..." />
-
-  <label>Telegram chat ID</label>
-  <input type="text" id="al-tg-chat" placeholder="-1001234567890" />
-
-  <label>Low-peer alert threshold</label>
-  <input type="number" id="al-peer-thr" min="1" max="50" value="5"
-         style="width:90px;margin-bottom:12px;" />
-
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
-      <input type="checkbox" id="al-freeze-chk" checked /> Freeze alerts
-    </label>
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
-      <input type="checkbox" id="al-peer-chk" checked /> Peer-count alerts
-    </label>
-  </div>
-
-  <label>Low-peer divergence threshold (blocks)</label>
-  <input type="number" id="al-div-thr" min="1" max="1000" value="10"
-         style="width:90px;margin-bottom:12px;" />
-
-  <label>Disk % alert threshold</label>
-  <input type="number" id="al-disk-thr" min="1" max="99" value="15"
-         style="width:90px;margin-bottom:12px;" />
-
-  <div style="display:flex;gap:8px;flex-wrap:wrap;">
-    <button class="btn-blue" onclick="saveAlertConfig()"><i class="ti ti-device-floppy"></i> Save</button>
-    <button class="btn-orange" onclick="testAlert()"><i class="ti ti-send"></i> Send test</button>
-  </div>
-  <div class="ctrl-status" id="al-status"></div>
-
-  <!-- Alert History subsection -->
-  <div style="margin-top:14px;border-top:1px solid var(--border-row);padding-top:10px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleAlertHistory()">
-      <span style="font-size:13px;font-weight:500;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;">Alert History</span>
-      <i class="ti ti-chevron-down" id="alert-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
-    </div>
-    <div id="alert-history-body" style="display:none;margin-top:10px;">
-      <div style="overflow-x:auto;">
-        <table class="workers-table" id="alert-history-table">
-          <thead><tr><th>Time</th><th>Message</th></tr></thead>
-          <tbody id="alert-history-tbody">
-            <tr><td colspan="2" style="color:var(--text-sub);padding:10px;">No history yet.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <p class="section-title"><i class="ti ti-database-export"></i> Backup</p>
-
+  <div id="backup-section-body" style="display:none;margin-top:12px;">
   <!-- Schedule 1 -->
   <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 4px;">
     <p style="font-size:12px;font-weight:600;color:#555;margin:0;">Schedule 1</p>
@@ -614,30 +556,23 @@
   <div class="row">
     <span class="row-label"><i class="ti ti-refresh"></i> Run every</span>
     <span style="display:flex;align-items:center;gap:8px;">
-      <input type="number" id="bk1-value" min="1" max="999" step="1" value="1"
-             style="width:60px;margin-bottom:0;" />
+      <input type="number" id="bk1-value" min="1" max="999" step="1" value="1" style="width:60px;margin-bottom:0;" />
       <select id="bk1-unit" style="margin-bottom:0;">
         <option value="hours">Hours</option>
         <option value="days">Days</option>
         <option value="weeks">Weeks</option>
         <option value="months">Months</option>
       </select>
-      <button class="btn-blue" onclick="applyBackupSchedule(1)" id="bk1-apply-btn">
-        <i class="ti ti-check"></i> Apply
-      </button>
+      <button class="btn-blue" onclick="applyBackupSchedule(1)" id="bk1-apply-btn"><i class="ti ti-check"></i> Apply</button>
     </span>
   </div>
   <div class="row">
     <span class="row-label"><i class="ti ti-copy"></i> Keep copies</span>
     <span style="display:flex;align-items:center;gap:8px;">
-      <input type="number" id="bk1-retain" min="1" max="999" step="1" value="12"
-             style="width:60px;margin-bottom:0;" />
-      <button class="btn-blue" onclick="saveBackupRetention(1)" id="bk1-retain-btn">
-        <i class="ti ti-check"></i> Apply
-      </button>
+      <input type="number" id="bk1-retain" min="1" max="999" step="1" value="12" style="width:60px;margin-bottom:0;" />
+      <button class="btn-blue" onclick="saveBackupRetention(1)" id="bk1-retain-btn"><i class="ti ti-check"></i> Apply</button>
     </span>
   </div>
-
   <!-- Schedule 2 -->
   <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 4px;">
     <p style="font-size:12px;font-weight:600;color:#555;margin:0;">Schedule 2</p>
@@ -656,47 +591,40 @@
   <div class="row">
     <span class="row-label"><i class="ti ti-refresh"></i> Run every</span>
     <span style="display:flex;align-items:center;gap:8px;">
-      <input type="number" id="bk2-value" min="1" max="999" step="1" value="1"
-             style="width:60px;margin-bottom:0;" />
+      <input type="number" id="bk2-value" min="1" max="999" step="1" value="1" style="width:60px;margin-bottom:0;" />
       <select id="bk2-unit" style="margin-bottom:0;">
         <option value="hours">Hours</option>
         <option value="days">Days</option>
         <option value="weeks">Weeks</option>
         <option value="months">Months</option>
       </select>
-      <button class="btn-blue" onclick="applyBackupSchedule(2)" id="bk2-apply-btn">
-        <i class="ti ti-check"></i> Apply
-      </button>
+      <button class="btn-blue" onclick="applyBackupSchedule(2)" id="bk2-apply-btn"><i class="ti ti-check"></i> Apply</button>
     </span>
   </div>
   <div class="row">
     <span class="row-label"><i class="ti ti-copy"></i> Keep copies</span>
     <span style="display:flex;align-items:center;gap:8px;">
-      <input type="number" id="bk2-retain" min="1" max="999" step="1" value="12"
-             style="width:60px;margin-bottom:0;" />
-      <button class="btn-blue" onclick="saveBackupRetention(2)" id="bk2-retain-btn">
-        <i class="ti ti-check"></i> Apply
-      </button>
+      <input type="number" id="bk2-retain" min="1" max="999" step="1" value="12" style="width:60px;margin-bottom:0;" />
+      <button class="btn-blue" onclick="saveBackupRetention(2)" id="bk2-retain-btn"><i class="ti ti-check"></i> Apply</button>
     </span>
   </div>
-
   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-    <button class="btn-orange" onclick="backupNow()">
-      <i class="ti ti-database-export"></i> Backup now
-    </button>
-    <button class="btn-blue" onclick="runSetupTasks()" id="bk-setup-btn">
-      <i class="ti ti-settings"></i> Re-register Tasks
-    </button>
-    <button class="btn-blue" onclick="verifyBackup()" id="bk-verify-btn">
-      <i class="ti ti-shield-check"></i> Verify Last Backup
-    </button>
+    <button class="btn-orange" onclick="backupNow()"><i class="ti ti-database-export"></i> Backup now</button>
+    <button class="btn-blue" onclick="runSetupTasks()" id="bk-setup-btn"><i class="ti ti-settings"></i> Re-register Tasks</button>
+    <button class="btn-blue" onclick="verifyBackup()" id="bk-verify-btn"><i class="ti ti-shield-check"></i> Verify Last Backup</button>
   </div>
   <div class="ctrl-status" id="bk-status"></div>
   <div id="bk-verify-result" style="font-size:13px;color:var(--text-muted);margin-top:8px;display:none;"></div>
-</div>
+  </div><!-- end backup-section-body -->
+</div><!-- end Backup -->
 
+<!-- Maintenance (collapsible) -->
 <div class="section">
-  <p class="section-title"><i class="ti ti-clock-play"></i> Maintenance</p>
+  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('maintenance')">
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-clock-play"></i> Maintenance</p>
+    <i class="ti ti-chevron-down" id="maintenance-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+  </div>
+  <div id="maintenance-section-body" style="display:none;margin-top:12px;">
   <div class="row">
     <span class="row-label"><i class="ti ti-refresh"></i> Auto-restart enabled</span>
     <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
@@ -735,9 +663,67 @@
     <button class="btn-blue" onclick="saveMaintenanceConfig()"><i class="ti ti-device-floppy"></i> Save</button>
   </div>
   <div class="ctrl-status" id="maint-status"></div>
-</div>
+  </div><!-- end maintenance-section-body -->
+</div><!-- end Maintenance -->
 
-</div><!-- end sections-grid -->
+<!-- Alerts (collapsible) -->
+<div class="section">
+  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('alerts')">
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-bell"></i> Alerts</p>
+    <i class="ti ti-chevron-down" id="alerts-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+  </div>
+  <div id="alerts-section-body" style="display:none;margin-top:12px;">
+  <p class="note" style="margin-bottom:12px;">Get notified on Discord, Telegram, or your browser when the pool freezes or peer count drops.</p>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-row);">
+    <button id="notif-btn" onclick="toggleNotifications()"><i class="ti ti-bell" id="notif-icon"></i> <span id="notif-label">Enable browser alerts</span></button>
+    <span id="notif-status" style="font-size:13px;color:var(--text-sub);"></span>
+  </div>
+  <label>Discord webhook URL</label>
+  <input type="text" id="al-discord" placeholder="https://discord.com/api/webhooks/..." />
+  <label>Telegram bot token</label>
+  <input type="text" id="al-tg-token" placeholder="123456789:AABBccdd..." />
+  <label>Telegram chat ID</label>
+  <input type="text" id="al-tg-chat" placeholder="-1001234567890" />
+  <label>Low-peer alert threshold</label>
+  <input type="number" id="al-peer-thr" min="1" max="50" value="5" style="width:90px;margin-bottom:12px;" />
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
+      <input type="checkbox" id="al-freeze-chk" checked /> Freeze alerts
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
+      <input type="checkbox" id="al-peer-chk" checked /> Peer-count alerts
+    </label>
+  </div>
+  <label>Low-peer divergence threshold (blocks)</label>
+  <input type="number" id="al-div-thr" min="1" max="1000" value="10" style="width:90px;margin-bottom:12px;" />
+  <label>Disk % alert threshold</label>
+  <input type="number" id="al-disk-thr" min="1" max="99" value="15" style="width:90px;margin-bottom:12px;" />
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn-blue" onclick="saveAlertConfig()"><i class="ti ti-device-floppy"></i> Save</button>
+    <button class="btn-orange" onclick="testAlert()"><i class="ti ti-send"></i> Send test</button>
+  </div>
+  <div class="ctrl-status" id="al-status"></div>
+  <!-- Alert History subsection -->
+  <div style="margin-top:14px;border-top:1px solid var(--border-row);padding-top:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleAlertHistory()">
+      <span style="font-size:13px;font-weight:500;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;">Alert History</span>
+      <i class="ti ti-chevron-down" id="alert-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+    </div>
+    <div id="alert-history-body" style="display:none;margin-top:10px;">
+      <div style="overflow-x:auto;">
+        <table class="workers-table" id="alert-history-table">
+          <thead><tr><th>Time</th><th>Message</th></tr></thead>
+          <tbody id="alert-history-tbody">
+            <tr><td colspan="2" style="color:var(--text-sub);padding:10px;">No history yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  </div><!-- end alerts-section-body -->
+</div><!-- end Alerts -->
+
+</div><!-- end panels-bottom-grid -->
 
 <!-- Payout History section (full width, collapsible) -->
 <div class="section" style="margin-bottom:12px;">
@@ -759,6 +745,35 @@
           <tr><td colspan="3" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Blocks (full width, collapsible) -->
+<div class="section" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleRecentBlocks()">
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-cube"></i> Recent Blocks <span id="recent-blocks-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
+    <i class="ti ti-chevron-down" id="recent-blocks-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
+  </div>
+  <div id="recent-blocks-body" style="display:none;margin-top:14px;">
+    <div style="overflow-x:auto;">
+      <table class="workers-table">
+        <thead>
+          <tr>
+            <th>Block Hash</th>
+            <th>Height</th>
+            <th>Status</th>
+            <th>Found by</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody id="recent-blocks-tbody">
+          <tr><td colspan="5" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; refreshes with pool stats.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
+      <span id="recent-blocks-ts" style="font-size:13px;color:var(--text-ts);"></span>
     </div>
   </div>
 </div>
@@ -803,8 +818,8 @@
   </div>
   <div id="peer-manager-body" style="display:none;margin-top:14px;">
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
-      Check the peers you want, then click <strong>Apply Selected</strong>. Peers are written as
-      <code style="font-size:12px;">--addpeer</code> flags in docker-compose.yml &mdash; restart nodes to connect.
+      Check the peers you want, then click <strong>Apply Selected</strong>. Peers are written to
+      <code style="font-size:12px;">.env</code> as <code style="font-size:12px;">--addpeer</code> flags &mdash; restart nodes to connect.
     </p>
 
     <!-- Selection toolbar -->
@@ -812,9 +827,9 @@
       <button onclick="selectAllPeers(true)"  style="font-size:13px;padding:4px 10px;"><i class="ti ti-checkbox"></i> All</button>
       <button onclick="selectAllPeers(false)" style="font-size:13px;padding:4px 10px;"><i class="ti ti-square"></i> None</button>
       <span style="flex:1;"></span>
-      <button class="btn-green" onclick="addSelectedPeers()" id="peer-add-selected-btn" title="Apply only checked peers to docker-compose.yml"><i class="ti ti-file-check"></i> Apply Selected</button>
-      <button class="btn-green" onclick="addAllPeers()"      id="peer-add-btn"          title="Apply all peers in the list to docker-compose.yml"><i class="ti ti-file-settings"></i> Apply All</button>
-      <button class="btn-red"   onclick="clearPeerManagerList()" id="peer-clear-btn"     title="Clear all peers from the manager list (does not change docker-compose.yml)"><i class="ti ti-trash"></i> Clear</button>
+      <button class="btn-green" onclick="addSelectedPeers()" id="peer-add-selected-btn" title="Apply only checked peers — writes to .env"><i class="ti ti-file-check"></i> Apply Selected</button>
+      <button class="btn-green" onclick="addAllPeers()"      id="peer-add-btn"          title="Apply all peers in the list — writes to .env"><i class="ti ti-file-settings"></i> Apply All</button>
+      <button class="btn-red"   onclick="clearPeerManagerList()" id="peer-clear-btn"     title="Clear all peers from the manager list (does not change .env)"><i class="ti ti-trash"></i> Clear</button>
       <button class="btn-orange" onclick="loadPeers()"       id="peer-reload-btn"><i class="ti ti-refresh"></i> Reload</button>
     </div>
 
@@ -875,13 +890,12 @@
             <th>Worker name</th>
             <th title="Pool-assigned vardiff for this worker">Difficulty</th>
             <th>Hashrate (10m)</th>
-            <th title="Shares counted from recent pool log">Shares</th>
-            <th>Rejected</th>
+            <th title="Blocks credited to this wallet">Blocks</th>
             <th>Last seen</th>
           </tr>
         </thead>
         <tbody id="workers-tbody">
-          <tr><td colspan="8" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
+          <tr><td colspan="7" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
         </tbody>
       </table>
     </div>
@@ -941,7 +955,7 @@ if (!IS_SERVER) {
   document.getElementById('container-note').style.display = 'block';
 }
 
-function cfg(id) { return document.getElementById(id).value.trim(); }
+function cfg(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
 
 function updatePgUrl() {
   const user = cfg('cfg-pg-user');
@@ -1052,6 +1066,16 @@ function closeModal() { document.getElementById('modal').style.display = 'none';
 function shortNodeId(id) {
   if (!id || id.length <= 20) return id;
   return id.slice(0, 8) + '.......' + id.slice(-6);
+}
+// Auto-scale hashrate: input is always MH/s, output is human-readable string
+function formatHashrate(mhs) {
+  if (mhs == null) return null;
+  if (mhs <= 0)   return '0 MH/s';
+  if (mhs < 0.001)  return (mhs * 1000).toFixed(1) + ' KH/s';
+  if (mhs < 1)      return mhs.toFixed(3)            + ' MH/s';
+  if (mhs < 1000)   return mhs.toFixed(2)            + ' MH/s';
+  if (mhs < 1e6)    return (mhs / 1000).toFixed(2)   + ' GH/s';
+  return              (mhs / 1e6).toFixed(2)          + ' TH/s';
 }
 function copyNodeId(id, btn) {
   navigator.clipboard.writeText(id).then(() => {
@@ -1166,7 +1190,7 @@ async function fetchSyncState() {
       set('bv-m-blocks', j.cur_height.toLocaleString());
     }
     const ver = j.node1?.version;
-    if (ver) set('m-version', ver.length > 16 ? ver.slice(0, 16) + '...' : ver);
+    if (ver) set('m-version', ver);
 
     // Per-node panel renderer ? also mirrors data into basic-view (bv-) elements for node 1
     function renderNodePanel(prefix, n) {
@@ -1230,6 +1254,13 @@ async function fetchNodeId(force) {
   if (!IS_SERVER) return;
   const loadBtns = ['bv-load-nodeid-btn', 'adv-load-nodeid-btn'].map(id => document.getElementById(id)).filter(Boolean);
   loadBtns.forEach(b => { b.disabled = true; b.innerHTML = '<i class="ti ti-loader-2"></i> Scanning...'; });
+  // Clear all node ID displays before a forced re-scan so stale values don't persist
+  if (force) {
+    ['n1-nodeid', 'bv-n1-nodeid', 'n2-nodeid'].forEach(elId => {
+      const el = document.getElementById(elId);
+      if (el) el.innerHTML = '<i class="ti ti-loader-2" style="font-size:11px;opacity:0.5;"></i>';
+    });
+  }
   try {
     const url = force ? '/nodeid?force=1' : '/nodeid';
     const r = await fetch(url);
@@ -1240,24 +1271,27 @@ async function fetchNodeId(force) {
     ];
     let anyFound = false;
     pairs.forEach(([id, elIds]) => {
-      if (!id) return;
-      anyFound = true;
       elIds.forEach(elId => {
         const el = document.getElementById(elId);
         if (!el) return;
+        if (!id) {
+          el.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">&mdash;</span>';
+          return;
+        }
+        anyFound = true;
         el.title = id;
         el.innerHTML =
-          `<span style="cursor:help;" title="${id}">${shortNodeId(id)}</span>` +
-          `<button onclick="copyNodeId('${id}', this)" title="Copy full node ID"
+          `<span style="cursor:help;font-family:monospace;font-size:12px;" title="${id}">${shortNodeId(id)}</span>` +
+          `<button onclick="copyNodeId('${id}', this)" title="Copy full node key"
             style="margin-left:4px;padding:1px 6px;font-size:11px;vertical-align:middle;">
             <i class="ti ti-copy"></i></button>`;
       });
     });
-    // Update load buttons: hide if found, show "Retry" if not
+    // Update load buttons: show refresh icon if found, "Retry" if not
     loadBtns.forEach(b => {
       if (anyFound) {
         b.innerHTML = '<i class="ti ti-refresh"></i>';
-        b.title = 'Re-scan startup log';
+        b.title = 'Re-scan startup log for node ID';
         b.disabled = false;
         b.onclick = () => fetchNodeId(true);
         b.style.padding = '1px 6px';
@@ -1305,6 +1339,11 @@ async function fetchNodeInfo() {
     if (j.version) {
       const tag = j.version.includes(':') ? j.version.split(':').pop() : j.version;
       set('s-version', tag);
+      set('m-version', tag);
+    }
+    if (j.installer_version) {
+      const el = document.getElementById('m-installer-version');
+      if (el) { el.textContent = j.installer_version; el.style.display = ''; }
     }
   } catch(e) { /* non-critical */ }
 }
@@ -1391,7 +1430,7 @@ async function fetchPoolStats() {
   try {
     const r = await fetch('/poolstats');
     const j = await r.json();
-    if (j.error) { badge('p-health', 'DB error', 'err'); return; }
+    if (j.error) { badge('p-health', 'DB error', 'err'); console.error('[poolstats]', j.error); return; }
 
     // Health badge + freeze browser notification
     const h = j.health ?? {};
@@ -1409,8 +1448,9 @@ async function fetchPoolStats() {
     set('p-miners', j.active_miners ?? 0);
 
     if (j.hashrate_mhs != null) {
-      set('p-hashrate', j.hashrate_mhs.toFixed(2) + ' MH/s');
-      set('m-hashrate', j.hashrate_mhs.toFixed(2));
+      const hrFmt = formatHashrate(j.hashrate_mhs);
+      set('p-hashrate', hrFmt);
+      set('m-hashrate', hrFmt);
       _addHashratePoint(j.hashrate_mhs);
     }
 
@@ -1477,25 +1517,8 @@ async function fetchPoolStats() {
     // Workers table
     _updateWorkersTable(j.miners ?? []);
 
-    // Recent blocks table
-    const recent = j.recent_blocks ?? [];
-    if (recent.length) {
-      const cls = { MATURE: 'ok', ORPHANED: 'err', PENDING: 'warn', PAID: 'ok' };
-      document.getElementById('p-recent').style.display = 'block';
-      document.getElementById('p-recent-rows').innerHTML = recent.map(b => {
-        const shortHash = b.hash.length > 20 ? b.hash.slice(0, 12) + '…' + b.hash.slice(-8) : b.hash;
-        return `
-        <div class="container-row">
-          <span style="font-family:monospace;font-size:12px;flex:1;cursor:pointer;"
-                title="Click to copy full block ID&#10;${b.hash}"
-                onclick="navigator.clipboard.writeText('${b.hash}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})"
-                >${shortHash}</span>
-          <span style="font-size:12px;color:#666;margin:0 12px">#${b.height.toLocaleString()}</span>
-          <span class="badge badge-${cls[b.status]||'warn'}" style="margin-right:8px">${b.status}</span>
-          <span style="font-size:11px;color:#999;white-space:nowrap">${b.time}</span>
-        </div>`;
-      }).join('');
-    }
+    // Recent blocks collapsible section
+    _updateRecentBlocks(j.recent_blocks ?? []);
   } catch(e) { /* non-critical */ }
 }
 
@@ -1506,11 +1529,12 @@ async function fetchMinerMetrics() {
     const j = await r.json();
     if (j.error) return;
 
-    // Hashrate: miner reports H/s, convert to MH/s
+    // Hashrate: miner reports H/s, convert to MH/s then auto-scale for display
     const hr_mhs = (j.hashrate ?? 0) / 1e6;
     if (hr_mhs > 0) {
-      set('p-hashrate', hr_mhs.toFixed(4) + ' MH/s');
-      set('m-hashrate', hr_mhs.toFixed(4));
+      const hrFmt = formatHashrate(hr_mhs);
+      set('p-hashrate', hrFmt);
+      set('m-hashrate', hrFmt);
       _addHashratePoint(hr_mhs);
     }
 
@@ -1537,12 +1561,7 @@ async function fetchMinerMetrics() {
     if (j.wallet_full) {
       const tbody = document.getElementById('workers-tbody');
       if (!tbody) return;
-      const hrStr   = hr_mhs > 0 ? hr_mhs.toFixed(4) + ' MH/s' : '?';
-      const rej2    = j.rejected ?? 0;
-      const acc2    = j.accepted ?? 0;
-      const tot2    = acc2 + rej2;
-      const rejPct2 = tot2 > 0 ? Math.round(rej2 / tot2 * 100) : 0;
-      const rejCol2 = rejPct2 > 5 ? '#e06060' : 'inherit';
+      const hrStr   = formatHashrate(hr_mhs) ?? '?';
       const addrShort = j.wallet_full.length > 22 ? j.wallet_full.slice(0, 22) + '...' : j.wallet_full;
       const worker  = j.worker_name ?? '';
       const workerCell = worker
@@ -1551,29 +1570,24 @@ async function fetchMinerMetrics() {
       if (tbody.querySelector('td[colspan]')) {
         // "No workers" placeholder row — replace with real miner row
         // IP and difficulty not available from miner metrics (only from pool log), show dash
-        // Column layout: 0=address, 1=ip, 2=worker, 3=difficulty, 4=hashrate, 5=shares, 6=rejected, 7=last seen
+        // Column layout: 0=address, 1=ip, 2=worker, 3=difficulty, 4=hashrate, 5=blocks, 6=last seen
         tbody.innerHTML = `<tr>
           <td style="font-family:monospace;font-size:13px;">${addrShort}</td>
           <td><span style="color:var(--text-sub);">&#8212;</span></td>
           <td>${workerCell}</td>
           <td><span style="color:var(--text-sub);">&#8212;</span></td>
           <td>${hrStr}</td>
-          <td style="color:#4caf70;">${acc2.toLocaleString()}</td>
-          <td style="color:${rejCol2};">${rej2}${rejPct2 > 0 ? ' (' + rejPct2 + '%)' : ''}</td>
+          <td style="text-align:center;"><span style="color:var(--text-sub);">&#8212;</span></td>
           <td style="color:var(--text-muted);">?</td>
         </tr>`;
       } else {
-        // Find the matching row and patch its live hashrate + share stats
-        // Column layout: 0=address, 1=ip, 2=worker, 3=difficulty, 4=hashrate, 5=shares, 6=rejected, 7=last seen
+        // Find the matching row and patch its live hashrate
+        // Column layout: 0=address, 1=ip, 2=worker, 3=difficulty, 4=hashrate, 5=blocks, 6=last seen
         tbody.querySelectorAll('tr').forEach(tr => {
           const addrTd = tr.querySelector('td:first-child');
           if (addrTd && j.wallet_full.startsWith(addrTd.textContent.trim().replace('...', '').slice(0, 10))) {
-            if (tr.cells.length >= 7) {
+            if (tr.cells.length >= 6) {
               tr.cells[4].textContent = hrStr;
-              tr.cells[5].textContent = acc2.toLocaleString();
-              tr.cells[5].style.color = '#4caf70';
-              tr.cells[6].innerHTML   = rej2 + (rejPct2 > 0 ? ' (' + rejPct2 + '%)' : '');
-              tr.cells[6].style.color = rejCol2;
             }
           }
         });
@@ -2042,6 +2056,63 @@ async function containerAction(action, container) {
   } catch(e) { setTimeout(fetchContainers, 2500); }
 }
 
+// -- Recent Blocks -------------------------------------------------------------
+
+function toggleRecentBlocks() {
+  const body = document.getElementById('recent-blocks-body');
+  const chev = document.getElementById('recent-blocks-chevron');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+}
+
+function _updateRecentBlocks(recent) {
+  const tbody = document.getElementById('recent-blocks-tbody');
+  const count = document.getElementById('recent-blocks-count');
+  const ts    = document.getElementById('recent-blocks-ts');
+  if (!tbody) return;
+
+  if (count) count.textContent = recent.length ? `(${recent.length})` : '';
+  if (ts)    ts.textContent    = recent.length ? 'Updated: ' + new Date().toLocaleTimeString() : '';
+
+  if (!recent || !recent.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-sub);padding:16px 10px;">No blocks found yet.</td></tr>`;
+    return;
+  }
+
+  const cls = { MATURE: 'ok', ORPHANED: 'err', PENDING: 'warn', PAID: 'ok' };
+  tbody.innerHTML = recent.map(b => {
+    const shortHash = b.hash && b.hash.length > 20
+      ? b.hash.slice(0, 12) + '…' + b.hash.slice(-8) : (b.hash || '—');
+
+    // "Found by" cell: prefer log (wallet.workername), fall back to credits address
+    let finderCell = '<span style="color:var(--text-sub);">—</span>';
+    if (b.finder) {
+      const dot = b.finder.lastIndexOf('.');
+      if (dot > 0) {
+        const wallet = b.finder.slice(0, dot);
+        const wname  = b.finder.slice(dot + 1);
+        const ws     = wallet.length > 14 ? wallet.slice(0, 6) + '…' + wallet.slice(-4) : wallet;
+        finderCell   = `<span style="font-family:monospace;font-size:12px;" title="${b.finder}">${ws}</span>`
+                     + ` <span style="color:var(--text-muted);">/ ${wname}</span>`;
+      } else {
+        const ws   = b.finder.length > 14 ? b.finder.slice(0, 6) + '…' + b.finder.slice(-4) : b.finder;
+        finderCell = `<span style="font-family:monospace;font-size:12px;" title="${b.finder}">${ws}</span>`;
+      }
+    }
+
+    return `<tr>
+      <td style="font-family:monospace;font-size:12px;cursor:pointer;"
+          title="Click to copy&#10;${b.hash}"
+          onclick="navigator.clipboard.writeText('${b.hash}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})">${shortHash}</td>
+      <td style="color:var(--text-muted);">#${(b.height||0).toLocaleString()}</td>
+      <td><span class="badge badge-${cls[b.status]||'warn'}">${b.status}</span></td>
+      <td>${finderCell}</td>
+      <td style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${b.time || '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
 // -- Workers table -------------------------------------------------------------
 
 function toggleWorkers() {
@@ -2057,38 +2128,38 @@ function _updateWorkersTable(miners) {
   const note  = document.getElementById('workers-note');
   if (!tbody) return;
   if (!miners || miners.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--text-sub);padding:16px 10px;">No workers active in the last 24 hours.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--text-sub);padding:16px 10px;">No workers active in the last 24 hours.</td></tr>`;
     return;
   }
   if (note) note.style.display = 'none';
   tbody.innerHTML = miners.map(m => {
-    const tot    = (m.accepted || 0) + (m.rejected || 0);
-    const rejPct = tot > 0 ? Math.round((m.rejected || 0) / tot * 100) : 0;
-    const hrStr  = m.hashrate_mhs > 0 ? m.hashrate_mhs.toFixed(4) + ' MH/s' : '—';
-    const rejCol = rejPct > 5 ? '#e06060' : 'inherit';
+    const hrStr  = formatHashrate(m.hashrate_mhs) ?? '—';
     const addrShort = m.address && m.address.length > 14
       ? m.address.slice(0, 6) + '…' + m.address.slice(-6) : (m.address || '—');
     const workerCell = m.worker
       ? `<span style="color:var(--text);font-weight:500;">${m.worker}</span>`
       : `<span style="color:var(--text-sub);">—</span>`;
     const ipOk = m.ip && m.ip !== 'None' && m.ip !== '';
-    const ipCell = ipOk
-      ? `<span style="font-family:monospace;font-size:12px;">${m.ip}</span>`
-      : `<span style="color:var(--text-sub);">&#8212;</span>`;
+    const isDockerNat = ipOk && /^(172\.(1[6-9]|2\d|3[01])\.|10\.|192\.168\.)/.test(m.ip);
+    const ipCell = !ipOk
+      ? `<span style="color:var(--text-sub);">&#8212;</span>`
+      : isDockerNat
+        ? `<span style="font-family:monospace;font-size:12px;color:var(--text-muted);" title="Docker bridge IP — real source IP hidden by NAT (${m.ip})">external</span>`
+        : `<span style="font-family:monospace;font-size:12px;">${m.ip}</span>`;
     const diffVal = m.difficulty > 0
-      ? m.difficulty.toLocaleString(undefined, {maximumFractionDigits: 0})
+      ? m.difficulty.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 4})
       : '<span style="color:var(--text-sub);">—</span>';
-    const accStr = (m.accepted || 0) > 0
-      ? (m.accepted).toLocaleString()
-      : '<span style="color:var(--text-sub);">0</span>';
+    const blkCount = m.blocks_found || 0;
+    const blkCell  = blkCount > 0
+      ? `<span style="color:#4caf70;font-weight:600;">${blkCount}</span>`
+      : `<span style="color:var(--text-sub);">—</span>`;
     return `<tr>
       <td title="${m.address}" style="font-family:monospace;font-size:13px;cursor:help;">${addrShort}</td>
       <td>${ipCell}</td>
       <td>${workerCell}</td>
       <td style="color:var(--text-muted);font-variant-numeric:tabular-nums;">${diffVal}</td>
       <td>${hrStr}</td>
-      <td style="color:#4caf70;">${accStr}</td>
-      <td style="color:${rejCol};">${m.rejected || 0}${rejPct > 0 ? ' (' + rejPct + '%)' : ''}</td>
+      <td style="text-align:center;">${blkCell}</td>
       <td style="color:var(--text-muted);">${m.last_active || '—'}</td>
     </tr>`;
   }).join('');
@@ -2145,6 +2216,17 @@ async function saveBackupRetention(scheduleNum) {
     btn.disabled = false;
     setTimeout(() => { document.getElementById('bk-status').textContent = ''; }, 4000);
   }
+}
+
+// -- Generic collapsible section toggle ----------------------------------------
+
+function toggleSection(id) {
+  const body   = document.getElementById(id + '-section-body');
+  const chevron = document.getElementById(id + '-section-chevron');
+  if (!body) return;
+  const opening = body.style.display === 'none';
+  body.style.display = opening ? '' : 'none';
+  if (chevron) chevron.style.transform = opening ? 'rotate(180deg)' : '';
 }
 
 // -- Alert history -------------------------------------------------------------
@@ -2300,7 +2382,7 @@ async function addSelectedPeers() {
   }
   const btn = document.getElementById('peer-add-selected-btn');
   if (btn) btn.disabled = true;
-  _peerMgrStatus(`Applying ${checked.length} selected peer(s) to docker-compose.yml...`, 'warn');
+  _peerMgrStatus(`Applying ${checked.length} selected peer(s) to .env...`, 'warn');
   ctrlStatus('Adding peers...', 'warn');
   try {
     const r = await fetch('/peers/add', {
@@ -2310,7 +2392,7 @@ async function addSelectedPeers() {
     });
     const j = await r.json();
     const msg = j.ok
-      ? (j.note ?? `Applied ${j.added} new peer(s) to docker-compose.yml. Restart nodes to connect.`)
+      ? (j.note ?? `Applied ${j.applied ?? j.added ?? 0} peer(s) to .env. Restart nodes to connect.`)
       : 'Failed: ' + (j.error ?? 'Unknown error');
     _peerMgrStatus(msg, j.ok ? 'ok' : 'err');
     ctrlStatus(msg, j.ok ? 'ok' : 'err');
@@ -2369,7 +2451,7 @@ async function addAllPeers() {
     });
     const j = await r.json();
     const msg = j.ok
-      ? (j.note ?? `Applied ${j.added} new peer(s) to docker-compose.yml. Restart nodes to connect.`)
+      ? (j.note ?? `Applied ${j.applied ?? j.added ?? 0} peer(s) to .env. Restart nodes to connect.`)
       : 'Failed: ' + (j.error ?? 'Unknown error');
     const type = j.ok ? 'ok' : 'err';
     _peerMgrStatus(msg, type);
@@ -2382,7 +2464,7 @@ async function addAllPeers() {
 
 async function clearPeerManagerList() {
   if (!IS_SERVER) return;
-  if (!confirm('Clear all peers from the manager list?\n\nThis will NOT change docker-compose.yml — use Apply Selected or Apply All to write peers there.')) return;
+  if (!confirm('Clear all peers from the manager list?\n\nThis does NOT clear peers already written to .env — use Apply (with nothing checked) or the Clear button after applying to remove them.')) return;
   const btn = document.getElementById('peer-clear-btn');
   if (btn) btn.disabled = true;
   _peerMgrStatus('Clearing peer list...', 'warn');
@@ -2702,6 +2784,8 @@ async function fetchAll() {
       ...(isOccasional || _isBlank('m-pubip')      ? [fetchPublicIP()]   : []),
       // Node ID is loaded on demand via the Load ID button, not auto-refreshed.
       ...(isOccasional                              ? [fetchAlertHistory()]: []),
+      // Installer version + node image tag (rarely changes, fetch on first load and every 5 ticks)
+      ...(isOccasional || _isBlank('m-installer-version') ? [fetchNodeInfo()] : []),
     ];
 
     await Promise.allSettled([...always, ...occasional]);
@@ -2731,6 +2815,8 @@ fetchPeersCount();
 fetchAll();
 // Tier 2 once on load so balance/price/etc show immediately
 fetchBalance(); fetchCoinPrice(); fetchDifficulty(); fetchMinerMetrics(); fetchAlertHistory();
+// Node info (installer version) — once on load; also runs every 5 ticks via fetchAll
+fetchNodeInfo();
 
 // Tier 3 once on load ? static config that doesn't auto-refresh
 fetchStaticConfig();

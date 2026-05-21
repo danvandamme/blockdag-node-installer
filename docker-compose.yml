@@ -366,7 +366,7 @@ services:
       NODE_ARGS: >
         --p2ptcpport=8151
         --listen=0.0.0.0
-        --addpeer=${NODE1_PEER_ADDRESSES}
+        ${NODE1_ADDPEER_FLAGS:-}
         --rpclisten=0.0.0.0:38131
         --evm.http.port=18545
         --evm.http.addr=0.0.0.0
@@ -418,7 +418,7 @@ services:
       NODE_ARGS: >
         --p2ptcpport=8152
         --listen=0.0.0.0
-        --addpeer=${NODE2_PEER_ADDRESSES}
+        ${NODE2_ADDPEER_FLAGS:-}
         --rpclisten=0.0.0.0:38131
         --evm.http.port=18545
         --evm.http.addr=0.0.0.0

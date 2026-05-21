@@ -47,6 +47,7 @@ MAINTENANCE_FILE = Path(__file__).parent / "maintenance.json"
 PEERS_FILE         = Path(__file__).parent / "Network Peers.txt"
 PEERS_MANAGED_FILE = Path(__file__).parent / "peers-managed.txt"
 COMPOSE_FILE       = INSTALL_DIR / "docker-compose.yml"
+ENV_FILE           = INSTALL_DIR / ".env"
 MAX_ALERT_HISTORY  = 50
 ALERT_COOLDOWN = 900  # seconds between repeat alerts for same condition
 
@@ -95,56 +96,69 @@ def _dagtech_worker_map():
 _POOL_LOG_TS_RE  = re.compile(r"^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})")
 _POOL_AUTH_RE    = re.compile(r"\[((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\]\s+authorize accepted user=([^\s]+)")
 _POOL_PUSHDIF_RE = re.compile(r"PUSHDIF\s+->\s+((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\s+mining\.set_difficulty\s+([0-9.]+)")
-_POOL_SHARE_RE   = re.compile(r"valid share accepted\s+[0-9.]+\s+[^0-9]+[0-9]+\s+worker=([^\s]+)")
+_POOL_SHARE_RE   = re.compile(r"valid share accepted\s+([0-9.]+)\s+[^0-9]+[0-9]+\s+worker=([^\s]+)")
+_POOL_SUBMIT_RE  = re.compile(r"submit from worker=([^\s]+)")
 _POOL_ANSI_RE    = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _parse_pool_workers():
     """
     Parse the asic-pool container logs to build a per-worker list with real
-    worker names, IPs, and assigned difficulty.  Returns [] on any error so
-    callers can fall back gracefully.
+    worker names, IPs, assigned difficulty, hashrate, and recent share count.
+
+    Uses --tail 5000 so auth events from hours ago are still captured (a
+    miner that connected 2h ago won't re-authenticate until it reconnects).
 
     Parsing strategy (sequential, single pass):
       AUTH_ACCEPT   → new worker entry keyed by 'wallet.workername'
       PUSHDIF       → assigns difficulty to the worker on that IP:port
-      valid share   → increments accepted count, updates last_active timestamp
+      valid share   → increments share count; sums difficulty for last 10 min
+                      to compute hashrate (H/s = sum_diff_10min / 600)
     """
     try:
         r = subprocess.run(
-            ["docker", "logs", "--tail", "800", "asic-pool"],
-            capture_output=True, text=True, timeout=10)
+            ["docker", "logs", "--tail", "5000", "asic-pool"],
+            capture_output=True, text=True, timeout=15)
         lines = [_POOL_ANSI_RE.sub("", l) for l in (r.stdout + r.stderr).splitlines()]
     except Exception:
         return []
+
+    now          = datetime.now()
+    ten_min_ago  = now - timedelta(minutes=10)
 
     workers    = {}   # user_str → miner dict
     ip_to_user = {}   # "ip:port" → user_str (most recent auth on that connection)
 
     for line in lines:
         ts_str = ""
+        ts_dt  = None
         ts_m = _POOL_LOG_TS_RE.match(line)
         if ts_m:
-            raw = ts_m.group(1)                           # "2024/01/15 14:30:00"
-            ts_str = raw[:10].replace("/", "-") + raw[10:16]  # "2024-01-15 14:30"
+            raw    = ts_m.group(1)                              # "2024/01/15 14:30:00"
+            ts_str = raw[:10].replace("/", "-") + raw[10:16]   # "2024-01-15 14:30"
+            try:
+                ts_dt = datetime.strptime(raw, "%Y/%m/%d %H:%M:%S")
+            except Exception:
+                ts_dt = None
 
         auth = _POOL_AUTH_RE.search(line)
         if auth:
             ip, port, user = auth.group(1), auth.group(2), auth.group(3)
             ip_to_user[f"{ip}:{port}"] = user
-            dot = user.rfind(".")
+            dot    = user.rfind(".")
             wallet = user[:dot] if dot > 0 else user
             wname  = user[dot + 1:] if dot > 0 else ""
             if user not in workers:
                 workers[user] = {
-                    "address":      wallet,
-                    "worker":       wname,
-                    "ip":           ip,
-                    "difficulty":   0,
-                    "last_active":  ts_str,
-                    "accepted":     0,
-                    "rejected":     0,
-                    "hashrate_mhs": 0,
+                    "address":        wallet,
+                    "worker":         wname,
+                    "ip":             ip,
+                    "difficulty":     0,
+                    "last_active":    ts_str,
+                    "accepted":       0,
+                    "rejected":       0,
+                    "hashrate_mhs":   0,
+                    "_diff_10m":      0.0,   # difficulty sum for last 10 min (hashrate)
                 }
             else:
                 # Reconnect — refresh IP and bump auth timestamp
@@ -163,15 +177,121 @@ def _parse_pool_workers():
 
         share = _POOL_SHARE_RE.search(line)
         if share:
-            user = share.group(1)
+            share_diff = float(share.group(1))
+            user       = share.group(2)
             if user in workers:
                 workers[user]["accepted"] += 1
                 if ts_str > workers[user]["last_active"]:
                     workers[user]["last_active"] = ts_str
+                # Accumulate difficulty for the 10-minute hashrate window
+                if ts_dt and ts_dt >= ten_min_ago:
+                    workers[user]["_diff_10m"] += share_diff
+
+    # Compute hashrate from recent share difficulty, then strip the temp key
+    for w in workers.values():
+        diff_10m = w.pop("_diff_10m", 0.0)
+        if diff_10m > 0:
+            w["hashrate_mhs"] = round(diff_10m / 600 / 1e6, 4)
 
     return sorted(workers.values(),
                   key=lambda x: x.get("last_active") or "",
                   reverse=True)
+
+
+def _parse_block_finders(block_times):
+    """
+    Match pool log 'submit from worker=wallet.workername' events to blocks.
+
+    block_times: list of (hash_str, created_at_datetime)
+    Returns:     dict {hash_str: "wallet.workername"}
+
+    Strategy: for each block, find the submit log line whose timestamp falls
+    within 90 seconds before the block's DB created_at.  We use --tail 20000
+    so multi-day history is covered (blocks are rare events).
+    """
+    if not block_times:
+        return {}
+    try:
+        r = subprocess.run(
+            ["docker", "logs", "--tail", "20000", "asic-pool"],
+            capture_output=True, text=True, timeout=15)
+        lines = [_POOL_ANSI_RE.sub("", l) for l in (r.stdout + r.stderr).splitlines()]
+    except Exception:
+        return {}
+
+    # Collect all submit events as (datetime, worker_str)
+    submit_events = []
+    for line in lines:
+        ts_m  = _POOL_LOG_TS_RE.match(line)
+        sub_m = _POOL_SUBMIT_RE.search(line)
+        if ts_m and sub_m:
+            try:
+                ts_dt = datetime.strptime(ts_m.group(1), "%Y/%m/%d %H:%M:%S")
+                submit_events.append((ts_dt, sub_m.group(1)))
+            except Exception:
+                pass
+
+    finders = {}
+    try:
+        for block_hash, block_dt in block_times:
+            if not block_dt or not isinstance(block_dt, datetime):
+                continue
+            # Strip timezone info for naive comparison (pool logs are local time)
+            if hasattr(block_dt, "tzinfo") and block_dt.tzinfo is not None:
+                block_dt = block_dt.replace(tzinfo=None)
+            best_worker = None
+            best_delta  = None
+            for sub_dt, worker in submit_events:
+                try:
+                    delta = (block_dt - sub_dt).total_seconds()
+                except Exception:
+                    continue
+                # Accept submits 0–90 s before the block was recorded in DB
+                if 0 <= delta <= 90:
+                    if best_delta is None or delta < best_delta:
+                        best_delta = delta
+                        best_worker = worker
+            if best_worker:
+                finders[block_hash] = best_worker
+    except Exception:
+        pass
+    return finders
+
+
+def _env_read():
+    """Read INSTALL_DIR/.env as an ordered {key: raw_value} dict (comments skipped)."""
+    result = {}
+    if not ENV_FILE.exists():
+        return result
+    for line in ENV_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#") or "=" not in stripped:
+            continue
+        k, _, v = stripped.partition("=")
+        result[k.strip()] = v  # value kept verbatim (may be empty)
+    return result
+
+
+def _env_write_keys(updates: dict):
+    """Update specific keys in INSTALL_DIR/.env in-place; append any key not already present."""
+    if not ENV_FILE.exists():
+        ENV_FILE.write_text("", encoding="utf-8")
+    lines = ENV_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+    updated = set()
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("#") and "=" in stripped:
+            k = stripped.partition("=")[0].strip()
+            if k in updates:
+                new_lines.append(f"{k}={updates[k]}")
+                updated.add(k)
+                continue
+        new_lines.append(line)
+    for k, v in updates.items():
+        if k not in updated:
+            new_lines.append(f"{k}={v}")
+    ENV_FILE.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
 
 def _managed_peers():
@@ -682,12 +802,42 @@ class Handler(BaseHTTPRequestHandler):
 
             # ── 5 most recent blocks ──────────────────────────────────────────
             rb = psql(
-                "SELECT hash, height, status, "
-                "to_char(created_at,'MM-DD HH24:MI') "
-                "FROM blocks ORDER BY created_at DESC LIMIT 5")
-            recent = [{"hash": str(r[0]), "height": int(r[1]),
-                       "status": r[2], "time": r[3]}
-                      for r in rb if len(r) >= 4]
+                "SELECT b.hash, b.height, b.status, "
+                "to_char(b.created_at,'MM-DD HH24:MI'), "
+                "b.created_at, "
+                "(SELECT miner_address FROM credits "
+                " WHERE block_hash = b.hash LIMIT 1) "
+                "FROM blocks b ORDER BY b.created_at DESC LIMIT 5")
+
+            # Finder from pool logs (has wallet.workername) or fall back to credits address
+            # r[4] is the raw psql TIMESTAMP string — parse it to datetime for comparison
+            def _parse_ts(s):
+                if not s:
+                    return None
+                s = str(s).strip()
+                for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+                    try:
+                        return datetime.strptime(s, fmt)
+                    except ValueError:
+                        pass
+                return None
+            block_times = [(str(r[0]), _parse_ts(r[4])) for r in rb if len(r) >= 5]
+            finders_log = _parse_block_finders(block_times)
+
+            recent = []
+            for r in rb:
+                if len(r) < 4:
+                    continue
+                h           = str(r[0])
+                finder_log  = finders_log.get(h)
+                finder_db   = str(r[5]) if len(r) >= 6 and r[5] else None
+                recent.append({
+                    "hash":   h,
+                    "height": int(r[1]),
+                    "status": r[2],
+                    "time":   r[3],
+                    "finder": finder_log or finder_db,
+                })
 
             # ── Pool health from container logs ───────────────────────────────
             logs = subprocess.run(
@@ -744,14 +894,16 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
-            # Hashrate estimate from share difficulty (last 10 min)
+            # Hashrate estimate from share difficulty (last 10 min).
+            # Returns 0 when pool is running but no recent shares (so UI shows
+            # "0 MH/s" rather than "—"), None only on query error.
             hashrate_mhs = None
             try:
                 hr = psql(
                     "SELECT COALESCE(SUM(difficulty),0) FROM shares "
                     "WHERE created_at > NOW() - INTERVAL '10 minutes' AND is_valid = TRUE")
-                if hr and float(hr[0][0]) > 0:
-                    hashrate_mhs = round(float(hr[0][0]) / 600 / 1e6, 2)
+                if hr:
+                    hashrate_mhs = round(float(hr[0][0]) / 600 / 1e6, 4)
             except Exception:
                 pass
 
@@ -764,15 +916,28 @@ class Handler(BaseHTTPRequestHandler):
                     "WHERE created_at > NOW() - INTERVAL '10 minutes' AND is_valid = TRUE "
                     "GROUP BY address")
                 for hr in hr_rows:
-                    if len(hr) >= 2 and float(hr[1]) > 0:
+                    if len(hr) >= 2:
                         hashrate_by_addr[str(hr[0]).lower()] = round(float(hr[1]) / 600 / 1e6, 4)
+            except Exception:
+                pass
+
+            # ── Blocks found per wallet (from credits table) ───────────────────
+            blocks_by_addr = {}
+            try:
+                bc = psql(
+                    "SELECT miner_address, COUNT(DISTINCT block_hash) "
+                    "FROM credits GROUP BY miner_address")
+                for row in bc:
+                    if len(row) >= 2 and row[0]:
+                        blocks_by_addr[str(row[0]).lower()] = int(row[1])
             except Exception:
                 pass
 
             # ── Per-worker list from pool logs (shows real worker names + diff) ─
             miners_list = _parse_pool_workers()
             for w in miners_list:
-                w["hashrate_mhs"] = hashrate_by_addr.get(w["address"].lower(), 0)
+                w["hashrate_mhs"]  = hashrate_by_addr.get(w["address"].lower(), 0)
+                w["blocks_found"]  = blocks_by_addr.get(w["address"].lower(), 0)
 
             # ── Fall back to DB miners table if log parse returned nothing ──────
             if not miners_list:
@@ -807,6 +972,7 @@ class Handler(BaseHTTPRequestHandler):
                                 "accepted":     0,
                                 "rejected":     0,
                                 "hashrate_mhs": hashrate_by_addr.get(addr.lower(), 0),
+                                "blocks_found": blocks_by_addr.get(addr.lower(), 0),
                             })
                 except Exception:
                     pass
@@ -1066,6 +1232,11 @@ class Handler(BaseHTTPRequestHandler):
             result["version"] = r.stdout.strip() if r.returncode == 0 else None
         except Exception:
             result["version"] = None
+        try:
+            env = _env_read()
+            result["installer_version"] = env.get("INSTALLER_VERSION") or None
+        except Exception:
+            result["installer_version"] = None
         self._json(result)
 
     def _node_syncstate(self, container, peer_max_height=None):
@@ -1272,7 +1443,11 @@ class Handler(BaseHTTPRequestHandler):
         else:
             _node_id_cache.pop(container, None)
 
-        # Node ID only appears in the startup log — scan the first 5 minutes only.
+        # The node logs its own libp2p peer ID exactly once at startup:
+        #   "Node started p2p server (TCP):multiAddr=/ip4/0.0.0.0/tcp/PORT/p2p/16Uiu2H..."
+        # The 0.0.0.0 listener address uniquely identifies this as the LOCAL node.
+        # All other 16Uiu2H strings in the log are REMOTE peers (addpeer args, peer
+        # connections) which must NOT be confused with the node's own identity.
         try:
             r2 = subprocess.run(
                 ["docker", "inspect", "--format", "{{.State.StartedAt}}", container],
@@ -1286,11 +1461,12 @@ class Handler(BaseHTTPRequestHandler):
                     capture_output=True, text=True, timeout=10)
                 logs = re.sub(r'\x1b\[[0-9;]*m|\[0m', '', r3.stdout + r3.stderr)
                 for line in logs.splitlines():
-                    for word in line.split():
-                        if word.startswith("16Uiu2H") and len(word) > 20:
-                            nid = word.strip(",:")
-                            _node_id_cache[container] = nid
-                            return nid
+                    # Match only the self-announcement line (0.0.0.0 = all interfaces = local listener)
+                    m = re.search(r'multiAddr=/ip4/0\.0\.0\.0/tcp/\d+/p2p/(16Uiu2H\w+)', line)
+                    if m:
+                        nid = m.group(1).strip(",:")
+                        _node_id_cache[container] = nid
+                        return nid
         except Exception:
             pass
 
@@ -1501,9 +1677,20 @@ class Handler(BaseHTTPRequestHandler):
     def _get_peers(self):
         try:
             peers = _managed_peers()
+            # Read which peers are currently applied (written to .env)
+            applied = []
+            try:
+                env = _env_read()
+                flags = env.get("NODE1_ADDPEER_FLAGS", "")
+                if flags:
+                    applied = [f[len("--addpeer="):] for f in flags.split()
+                               if f.startswith("--addpeer=")]
+            except Exception:
+                pass
             self._json({
-                "peers": peers,
-                "count": len(peers),
+                "peers":        peers,
+                "count":        len(peers),
+                "applied":      applied,
                 "last_auto_add": _last_auto_add_time,
             })
         except Exception as e:
@@ -1524,9 +1711,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": str(e)}, 500)
 
     def _add_peers(self):
-        """Write managed peer list into docker-compose.yml as --addpeer flags.
-        BlockDAG nodes don't expose a live addPeer RPC; peers are bootstrap-only
-        via --addpeer startup flags. Nodes must be restarted to pick up changes."""
+        """Write managed peer list into .env as NODE1_ADDPEER_FLAGS / NODE2_ADDPEER_FLAGS.
+        docker-compose.yml references ${NODE1_ADDPEER_FLAGS:-} / ${NODE2_ADDPEER_FLAGS:-}
+        so nodes pick up the flags on next restart — the YAML itself is never modified."""
         try:
             body = {}
             try:
@@ -1540,55 +1727,29 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 peers = _managed_peers()
 
-            if not COMPOSE_FILE.exists():
-                self._json({"ok": False, "error": f"docker-compose.yml not found at {COMPOSE_FILE}"}, 500)
+            if not ENV_FILE.exists():
+                self._json({"ok": False, "error": f".env not found at {ENV_FILE}"}, 500)
                 return
 
-            compose = COMPOSE_FILE.read_text(encoding="utf-8")
-
-            # Build set of peers already present in the file
-            existing = set(re.findall(r"--addpeer=(\S+)", compose))
-            new_peers = [p for p in peers if p not in existing]
-
-            if not new_peers:
-                self._json({"ok": True, "added": 0, "total": len(peers),
-                            "note": "All peers already in docker-compose.yml. Restart nodes to ensure they connect."})
-                return
-
-            # Insert new --addpeer lines after the last existing --addpeer line in each NODE_ARGS block.
-            # Strategy: append new lines before the first non-addpeer flag line that follows --addpeer entries.
-            addpeer_block = "\n".join(f"        --addpeer={p}" for p in new_peers)
-
-            # Find the last --addpeer line and insert after it
-            last_addpeer = max((m.end() for m in re.finditer(r"--addpeer=\S+", compose)), default=None)
-            if last_addpeer is None:
-                self._json({"ok": False, "error": "Could not locate --addpeer section in docker-compose.yml"}, 500)
-                return
-
-            # Insert after the end of that line
-            eol = compose.find("\n", last_addpeer)
-            if eol == -1:
-                eol = len(compose)
-            compose = compose[:eol] + "\n" + addpeer_block + compose[eol:]
-
-            COMPOSE_FILE.write_text(compose, encoding="utf-8")
-            self._json({"ok": True, "added": len(new_peers), "total": len(peers),
-                        "note": f"Added {len(new_peers)} peer(s) to docker-compose.yml. Restart nodes to apply."})
+            # Space-separated --addpeer flags (empty string when peer list is empty)
+            flags = " ".join(f"--addpeer={p}" for p in peers)
+            _env_write_keys({"NODE1_ADDPEER_FLAGS": flags,
+                             "NODE2_ADDPEER_FLAGS": flags})
+            self._json({"ok": True, "applied": len(peers),
+                        "note": f"Written {len(peers)} peer(s) to .env. Restart nodes to apply."})
         except Exception as e:
             self._json({"ok": False, "error": str(e)}, 500)
 
     def _clear_peers(self):
-        """Remove all --addpeer lines from docker-compose.yml."""
+        """Clear NODE1_ADDPEER_FLAGS and NODE2_ADDPEER_FLAGS in .env."""
         try:
-            if not COMPOSE_FILE.exists():
-                self._json({"ok": False, "error": f"docker-compose.yml not found at {COMPOSE_FILE}"}, 500)
+            if not ENV_FILE.exists():
+                self._json({"ok": False, "error": f".env not found at {ENV_FILE}"}, 500)
                 return
-            compose = COMPOSE_FILE.read_text(encoding="utf-8")
-            original_lines = compose.splitlines(keepends=True)
-            filtered_lines = [l for l in original_lines if not re.search(r"--addpeer=", l)]
-            removed = len(original_lines) - len(filtered_lines)
-            COMPOSE_FILE.write_text("".join(filtered_lines), encoding="utf-8")
-            self._json({"ok": True, "removed": removed})
+            _env_write_keys({"NODE1_ADDPEER_FLAGS": "",
+                             "NODE2_ADDPEER_FLAGS": ""})
+            self._json({"ok": True, "removed": 0,
+                        "note": "Peer flags cleared from .env. Restart nodes to apply."})
         except Exception as e:
             self._json({"ok": False, "error": str(e)}, 500)
 
