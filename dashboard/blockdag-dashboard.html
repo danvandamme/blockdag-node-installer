@@ -987,6 +987,10 @@ function openConfigModal() {
     if (data.POOL_STARTING_PDIFF != null) set('s-pool-diff', data.POOL_STARTING_PDIFF);
     setv('cfg-pool-port', data.POOL_PORT);
     setv('cfg-pool-pass', data.BDAG_MINER_POOL_PASSWORD);
+    setv('cfg-node-cache',    data.NODE_CACHE_MB);
+    setv('cfg-node-dagcache', data.NODE_DAG_CACHE);
+    setv('cfg-node-bdcache',  data.NODE_BD_CACHE);
+    setv('cfg-node-peers',    data.NODE_MAX_PEERS);
     updatePgUrl();
   }).catch(() => {});
 }
@@ -1012,6 +1016,10 @@ async function applyConfig() {
       POOL_STARTING_PDIFF:     cfg('cfg-pool-diff'),
       POOL_PORT:               cfg('cfg-pool-port'),
       BDAG_MINER_POOL_PASSWORD: cfg('cfg-pool-pass'),
+      NODE_CACHE_MB:           cfg('cfg-node-cache'),
+      NODE_DAG_CACHE:          cfg('cfg-node-dagcache'),
+      NODE_BD_CACHE:           cfg('cfg-node-bdcache'),
+      NODE_MAX_PEERS:          cfg('cfg-node-peers'),
     };
     const r = await fetch('/env/config', {
       method: 'POST',
@@ -1070,12 +1078,12 @@ function shortNodeId(id) {
 // Auto-scale hashrate: input is always MH/s, output is human-readable string
 function formatHashrate(mhs) {
   if (mhs == null) return null;
-  if (mhs <= 0)   return '0 MH/s';
-  if (mhs < 0.001)  return (mhs * 1000).toFixed(1) + ' KH/s';
-  if (mhs < 1)      return mhs.toFixed(3)            + ' MH/s';
-  if (mhs < 1000)   return mhs.toFixed(2)            + ' MH/s';
-  if (mhs < 1e6)    return (mhs / 1000).toFixed(2)   + ' GH/s';
-  return              (mhs / 1e6).toFixed(2)          + ' TH/s';
+  if (mhs <= 0)    return '0 H/s';
+  if (mhs < 0.001) return (mhs * 1e6).toFixed(1)   + ' H/s';    // < 1 KH/s
+  if (mhs < 1)     return (mhs * 1000).toFixed(2)   + ' KH/s';  // 1 KH/s – 1 MH/s
+  if (mhs < 1000)  return mhs.toFixed(2)             + ' MH/s';
+  if (mhs < 1e6)   return (mhs / 1000).toFixed(2)   + ' GH/s';
+  return             (mhs / 1e6).toFixed(2)          + ' TH/s';
 }
 function copyNodeId(id, btn) {
   navigator.clipboard.writeText(id).then(() => {
@@ -2889,6 +2897,40 @@ setInterval(updateUptime, 1000);
       <div>
         <label>Pool password</label>
         <input type="text" id="cfg-pool-pass" value="1234" />
+      </div>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--border);">
+      <i class="ti ti-cpu"></i> Node performance
+    </div>
+
+    <div class="config-row">
+      <div>
+        <label>State cache <span style="font-size:0.8em;color:#888;">(MB)</span></label>
+        <input type="number" id="cfg-node-cache" value="4096" step="512" min="512"
+               title="--cache: RAM used for EVM state trie lookups. Higher = fewer disk reads during sync." />
+        <div style="font-size:0.78em;color:var(--text-muted);margin-top:2px;">node default: 1024</div>
+      </div>
+      <div>
+        <label>Max peers</label>
+        <input type="number" id="cfg-node-peers" value="350" step="50" min="10"
+               title="--maxpeers: maximum inbound + outbound peer connections." />
+        <div style="font-size:0.78em;color:var(--text-muted);margin-top:2px;">node default: 50</div>
+      </div>
+    </div>
+
+    <div class="config-row">
+      <div>
+        <label>DAG cache <span style="font-size:0.8em;color:#888;">(blocks)</span></label>
+        <input type="number" id="cfg-node-dagcache" value="8000" step="1000" min="1000"
+               title="--dagcachesize: number of DAG blocks kept in memory." />
+        <div style="font-size:0.78em;color:var(--text-muted);margin-top:2px;">node default: 2000</div>
+      </div>
+      <div>
+        <label>Block data cache <span style="font-size:0.8em;color:#888;">(blocks)</span></label>
+        <input type="number" id="cfg-node-bdcache" value="8000" step="1000" min="1000"
+               title="--bdcachesize: number of raw block bodies kept in memory." />
+        <div style="font-size:0.78em;color:var(--text-muted);margin-top:2px;">node default: 2000</div>
       </div>
     </div>
 

@@ -382,10 +382,13 @@ services:
         --modules=Blockdag,miner
         --evmenv="--rpc.allow-unprotected-txs --metrics --metrics.addr 0.0.0.0 --metrics.port 6060"
         --metrics
-        --rpcmaxconcurrentreqs=500
-        --maxpeers=350
-        --http.ratelimit=1800
-        --http.rateburst=3200
+        --rpcmaxconcurrentreqs=${NODE_RPC_MAX_CONCURRENT:-500}
+        --maxpeers=${NODE_MAX_PEERS:-350}
+        --cache=${NODE_CACHE_MB:-1024}
+        --dagcachesize=${NODE_DAG_CACHE:-2000}
+        --bdcachesize=${NODE_BD_CACHE:-2000}
+        --http.ratelimit=${NODE_HTTP_RATE_LIMIT:-1800}
+        --http.rateburst=${NODE_HTTP_RATE_BURST:-3200}
         --evm.ws.port=18546
         --evm.ws.addr=0.0.0.0
         --miner
@@ -434,10 +437,13 @@ services:
         --modules=Blockdag,miner
         --evmenv="--rpc.allow-unprotected-txs --metrics --metrics.addr 0.0.0.0 --metrics.port 6060"
         --metrics
-        --rpcmaxconcurrentreqs=500
-        --maxpeers=350
-        --http.ratelimit=1800
-        --http.rateburst=3200
+        --rpcmaxconcurrentreqs=${NODE_RPC_MAX_CONCURRENT:-500}
+        --maxpeers=${NODE_MAX_PEERS:-350}
+        --cache=${NODE_CACHE_MB:-1024}
+        --dagcachesize=${NODE_DAG_CACHE:-2000}
+        --bdcachesize=${NODE_BD_CACHE:-2000}
+        --http.ratelimit=${NODE_HTTP_RATE_LIMIT:-1800}
+        --http.rateburst=${NODE_HTTP_RATE_BURST:-3200}
         --evm.ws.port=18546
         --evm.ws.addr=0.0.0.0
         --miner

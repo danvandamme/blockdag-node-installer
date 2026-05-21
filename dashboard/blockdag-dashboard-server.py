@@ -34,6 +34,7 @@ ENV_EXPOSED_KEYS = [
     "MINING_ADDRESS", "NODE_RPC_USER", "NODE_RPC_PASS",
     "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB", "PG_URL",
     "POOL_FEE_PERCENTAGE", "POOL_STARTING_PDIFF", "POOL_PORT", "BDAG_MINER_POOL_PASSWORD",
+    "NODE_CACHE_MB", "NODE_DAG_CACHE", "NODE_BD_CACHE", "NODE_MAX_PEERS",
 ]
 
 CONTAINERS  = ["bdag-miner-node-1", "bdag-miner-node-2",
@@ -59,6 +60,15 @@ _alert_state = {
     "disk":       {"active": False, "last_sent": 0.0},
 }
 _last_auto_add_time = None   # ISO string, updated when auto-add fires
+
+# ── Node freeze watchdog ──────────────────────────────────────────────────────
+WATCHDOG_INTERVAL   = 120   # seconds between checks
+WATCHDOG_GRACE      = 300   # seconds of confirmed freeze before auto-restart
+WATCHDOG_STARTUP    = 300   # ignore containers that restarted < 5 min ago
+WATCHDOG_CONTAINERS = ["bdag-miner-node-1", "bdag-miner-node-2"]
+
+_watchdog_lock  = threading.Lock()
+_watchdog_state = {}        # container -> {"frozen_since": float|None}
 _node_id_cache      = {}     # container_name -> node_id string (cached from startup log)
 _node_version_cache = {}     # container_name -> version string (cached from startup log)
 
@@ -1104,20 +1114,88 @@ class Handler(BaseHTTPRequestHandler):
         self._json(result)
 
     def _get_minermetrics(self):
+        result = {}
+
+        # ── 1. Find config.env ────────────────────────────────────────────────
+        config = {}
+        config_path = None
+        for p in _DAGTECH_CONFIG_PATHS:
+            if p.exists():
+                config = _parse_env(p)
+                config_path = p
+                break
+
+        if config:
+            if config.get("WALLET"):
+                result["wallet_full"] = config["WALLET"]
+            if config.get("WORKER_NAME"):
+                result["worker_name"] = config["WORKER_NAME"]
+
+        # ── 2. Try the miner's built-in HTTP metrics endpoint ─────────────────
+        metrics_port = int(config.get("METRICS_PORT", 8880))
+        http_ok = False
         try:
             req = urllib.request.Request(
-                "http://127.0.0.1:8880/metrics",
+                f"http://127.0.0.1:{metrics_port}/metrics",
                 headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=2) as r:
+                result.update(json.loads(r.read()))
+            http_ok = True
+        except Exception:
+            pass
+
+        # ── 3. Control server (8880) — status + sysinfo ───────────────────────
+        ctrl = "http://127.0.0.1:8880"
+        try:
+            req = urllib.request.Request(f"{ctrl}/status")
+            with urllib.request.urlopen(req, timeout=2) as r:
+                st = json.loads(r.read())
+            result["running"] = st.get("running", False)
+        except Exception:
+            result["running"] = False
+
+        try:
+            req = urllib.request.Request(f"{ctrl}/sysinfo")
             with urllib.request.urlopen(req, timeout=3) as r:
-                data = json.loads(r.read())
-            worker_map = _dagtech_worker_map()
-            for wallet, worker in worker_map.items():
-                data["wallet_full"] = wallet
-                data["worker_name"] = worker
-                break
-            self._json(data)
-        except Exception as e:
-            self._json({"error": str(e)}, 502)
+                result.update(json.loads(r.read()))
+        except Exception:
+            pass
+
+        # ── 4. Log file fallback — hashrate, shares, difficulty ───────────────
+        if not http_ok and config_path:
+            try:
+                log_dir = config_path.parent / "logs"
+                log_file = log_dir / f"miner_{datetime.now().strftime('%Y-%m-%d')}.log"
+                if log_file.exists():
+                    lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                    # Scan from the end for the most recent stats/difficulty lines
+                    found_stats = found_diff = False
+                    for line in reversed(lines):
+                        if not found_stats:
+                            # "[DagTech] 36640.3 H/s | Shares: 368/368/0 (sub/acc/rej) | Uptime: 0h5m"
+                            m = re.search(
+                                r'\[DagTech\]\s+([\d.]+)\s+H/s\s+\|\s+Shares:\s+(\d+)/(\d+)/(\d+)', line)
+                            if m:
+                                result["hashrate"] = float(m.group(1))   # H/s
+                                result["accepted"] = int(m.group(3))
+                                result["rejected"] = int(m.group(4))
+                                found_stats = True
+                        if not found_diff:
+                            # "[DagTech] Difficulty: 1.06862202"
+                            m = re.search(r'\[DagTech\]\s+Difficulty:\s+([\d.]+)', line)
+                            if m:
+                                result["difficulty"] = float(m.group(1))
+                                found_diff = True
+                        if found_stats and found_diff:
+                            break
+            except Exception:
+                pass
+
+        if not result:
+            self._json({"error": "Miner not found — check config path and control server"}, 502)
+            return
+
+        self._json(result)
 
     def _get_difficulty(self):
         diff = None
@@ -1949,8 +2027,91 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": str(e)}, 500)
 
 
+def _watchdog_check(container):
+    """Check one container for sync freeze. Restart it if stuck too long."""
+    now = time.time()
+
+    # Skip if container restarted too recently (let it finish startup)
+    try:
+        r = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.StartedAt}}", container],
+            capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            started_str = r.stdout.strip().split(".")[0] + "Z"
+            started = datetime.fromisoformat(started_str.replace("Z", "+00:00"))
+            uptime_secs = (datetime.now(timezone.utc) - started).total_seconds()
+            if uptime_secs < WATCHDOG_STARTUP:
+                return
+    except Exception:
+        return
+
+    # Pull last 5 minutes of logs
+    try:
+        r = subprocess.run(
+            ["docker", "logs", "--since", "5m", container],
+            capture_output=True, text=True, timeout=15)
+        logs = re.sub(r'\x1b\[[0-9;]*m|\[0m', '', r.stdout + r.stderr)
+    except Exception:
+        return
+
+    has_imported = bool(re.search(r'Imported new chain segment', logs))
+    cur_matches  = re.findall(r'cur=\((\d+(?:,\d+)*)\)', logs)
+
+    with _watchdog_lock:
+        state = _watchdog_state.setdefault(container, {"frozen_since": None})
+
+        if has_imported:
+            # Node is actively importing blocks — healthy
+            state["frozen_since"] = None
+            return
+
+        if not cur_matches:
+            # No sync activity — caught up or still starting up
+            state["frozen_since"] = None
+            return
+
+        # Syncing but no imports — check if cur= is stuck at a single value
+        if len(set(cur_matches)) > 1:
+            # Multiple different cur= values → some DAG progress happening
+            state["frozen_since"] = None
+            return
+
+        # All sync attempts in last 5 min have the same cur= and zero imports → frozen
+        if state["frozen_since"] is None:
+            state["frozen_since"] = now
+            print(f"[watchdog] {container}: freeze detected "
+                  f"(cur={cur_matches[-1]}), will restart in {WATCHDOG_GRACE}s if still stuck")
+            return
+
+        frozen_secs = now - state["frozen_since"]
+        if frozen_secs < WATCHDOG_GRACE:
+            print(f"[watchdog] {container}: still frozen ({frozen_secs:.0f}s / {WATCHDOG_GRACE}s grace)")
+            return
+
+        # Grace period expired — restart
+        print(f"[watchdog] {container}: frozen {frozen_secs:.0f}s — auto-restarting")
+        try:
+            subprocess.run(["docker", "restart", container], timeout=60)
+            print(f"[watchdog] {container}: restarted OK — peers will reconnect via --addpeer")
+        except Exception as e:
+            print(f"[watchdog] {container}: restart failed: {e}")
+        state["frozen_since"] = None
+
+
+def _watchdog_loop():
+    time.sleep(90)  # stagger 90s after startup so alert_loop gets a head start
+    while True:
+        try:
+            for container in WATCHDOG_CONTAINERS:
+                _watchdog_check(container)
+        except Exception as e:
+            print(f"[watchdog] loop error: {e}")
+        time.sleep(WATCHDOG_INTERVAL)
+
+
 if __name__ == "__main__":
-    threading.Thread(target=_alert_loop, daemon=True).start()
+    threading.Thread(target=_alert_loop,    daemon=True).start()
+    threading.Thread(target=_watchdog_loop, daemon=True).start()
     print(f"BlockDAG Dashboard  ->  http://localhost:{PORT}")
     print("Press Ctrl+C to stop.\n")
     ThreadingHTTPServer(("", PORT), Handler).serve_forever()
