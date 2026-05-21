@@ -663,15 +663,14 @@ class Handler(BaseHTTPRequestHandler):
             payout_history = []
             try:
                 ph = psql(
-                    "SELECT address, amount, to_char(created_at,'MM-DD HH24:MI') "
+                    "SELECT tx_hash, amount, to_char(created_at,'MM-DD HH24:MI') "
                     "FROM payouts ORDER BY created_at DESC LIMIT 20")
                 for row in ph:
                     if len(row) >= 3:
-                        addr = str(row[0])
                         payout_history.append({
-                            "address": addr,
+                            "tx_hash": str(row[0]),
                             "bdag":    round(int(row[1]) / 1e18, 8),
-                            "time":    row[2],
+                            "time":    str(row[2]),
                         })
             except Exception:
                 pass

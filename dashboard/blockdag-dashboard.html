@@ -750,7 +750,7 @@
       <table class="workers-table">
         <thead>
           <tr>
-            <th>Address</th>
+            <th>Tx Hash</th>
             <th>Amount (BDAG)</th>
             <th>Time</th>
           </tr>
@@ -2220,9 +2220,25 @@ function _peerMgrStatus(msg, type) {
 async function loadPeers() {
   if (!IS_SERVER) return;
   try {
-    const r = await fetch('/peers');
+    const [r, rc] = await Promise.all([
+      fetch('/peers'),
+      fetch('/peers/connected').catch(() => null),
+    ]);
     const j = await r.json();
     const peers = j.peers ?? [];
+
+    // Build set of IPs that are currently connected
+    const connectedIPs = new Set();
+    if (rc && rc.ok) {
+      try {
+        const jc = await rc.json();
+        for (const p of (jc.peers ?? [])) {
+          const m = (p.addr || p.full_addr || '').match(/\/ip4\/([\d.]+)/);
+          if (m) connectedIPs.add(m[1]);
+        }
+      } catch(e) {}
+    }
+
     const ta = document.getElementById('peer-manager-textarea');
     if (ta) ta.value = peers.join('\n');
     const cnt = document.getElementById('peer-manager-count');
@@ -2231,7 +2247,7 @@ async function loadPeers() {
     if (note) note.textContent = `${peers.length} peers in file`;
     const laa = document.getElementById('peer-last-auto-add');
     if (laa) laa.textContent = j.last_auto_add ?? '?';
-    _renderPeerCheckboxList(peers);
+    _renderPeerCheckboxList(peers, connectedIPs);
   } catch(e) { /* non-critical */ }
 }
 
@@ -2239,21 +2255,28 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function _renderPeerCheckboxList(peers) {
+function _renderPeerCheckboxList(peers, connectedIPs = new Set()) {
   const list = document.getElementById('peer-manager-list');
   if (!list) return;
   if (!peers || peers.length === 0) {
     list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-sub);">No peers in list. Add some via the raw editor below, or reload from file.</div>';
     return;
   }
+  const hasConnData = connectedIPs.size > 0;
   list.innerHTML = peers.map(p => {
     const ipMatch = p.match(/\/ip4\/([\d.]+)/);
     const ip = ipMatch ? ipMatch[1] : '?';
+    const isConnected = ip !== '?' && connectedIPs.has(ip);
+    const dot = hasConnData
+      ? `<span title="${isConnected ? 'Currently connected' : 'Not currently connected — may be stale'}"
+               style="font-size:9px;color:${isConnected ? '#4caf70' : '#666'};flex-shrink:0;">&#9679;</span>`
+      : '';
     const short = p.length > 55 ? p.slice(0, 38) + '...' + p.slice(-10) : p;
     return `<label style="display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer;
                           border-bottom:1px solid var(--border-row);user-select:none;">
       <input type="checkbox" class="peer-checkbox" data-peer="${escHtml(p)}" checked
              style="width:16px;height:16px;flex-shrink:0;cursor:pointer;" />
+      ${dot}
       <span style="font-family:monospace;font-size:12px;color:var(--text-muted);
                    min-width:94px;flex-shrink:0;">${ip}</span>
       <span style="font-family:monospace;font-size:12px;overflow:hidden;white-space:nowrap;
@@ -2539,13 +2562,18 @@ function _updatePayoutHistory(history) {
     tbody.innerHTML = `<tr><td colspan="3" style="color:var(--text-sub);padding:16px 10px;">No payouts recorded.</td></tr>`;
     return;
   }
-  tbody.innerHTML = history.map(p =>
-    `<tr>
-      <td style="font-family:monospace;font-size:13px;">${p.address}</td>
-      <td style="font-family:monospace;">${p.bdag.toFixed(8)}</td>
-      <td style="color:var(--text-muted);white-space:nowrap;">${p.time}</td>
-    </tr>`
-  ).join('');
+  tbody.innerHTML = history.map(p => {
+    const h = p.tx_hash || '';
+    const shortTx = h.length > 20 ? h.slice(0, 12) + '…' + h.slice(-8) : h;
+    return `<tr>
+      <td style="font-family:monospace;font-size:13px;cursor:pointer;"
+          title="Click to copy tx hash&#10;${h}"
+          onclick="navigator.clipboard.writeText('${h}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})"
+          >${shortTx}</td>
+      <td style="font-family:monospace;">${(p.bdag||0).toFixed(8)}</td>
+      <td style="color:var(--text-muted);white-space:nowrap;">${p.time||'—'}</td>
+    </tr>`;
+  }).join('');
 }
 
 // -- Maintenance config --------------------------------------------------------
