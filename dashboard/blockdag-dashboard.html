@@ -57,6 +57,11 @@
     .btn-blue:hover   { background: #d0e2fc; }
     .btn-orange { background: #fff3cd; border-color: #ffc966; color: #856404; }
     .btn-orange:hover { background: #ffe8a0; }
+    /* PowerShell/terminal popup buttons — dark blue like a real PS window */
+    .btn-ps { background: #012456; border-color: #0d3a78; color: #e8f0ff; }
+    .btn-ps:hover { background: #01306e; }
+    body.dark .btn-ps { background: #011e45; border-color: #1a4a90; color: #c8d8f8; }
+    body.dark .btn-ps:hover { background: #012a60; }
     body.dark .btn-green  { background: #1a3a24; border-color: #2a6040; color: #4caf70; }
     body.dark .btn-green:hover  { background: #234d2e; }
     body.dark .btn-red    { background: #3a1a1a; border-color: #6a2a2a; color: #e06060; }
@@ -137,7 +142,7 @@
       <button class="refresh-opt" data-s="60" onclick="setRefresh(60)">60s</button>
       <button class="refresh-opt" data-s="0"  onclick="setRefresh(0)">Off</button>
     </div>
-    <button onclick="fetchAll()"><i class="ti ti-refresh"></i> Refresh</button>
+    <button onclick="manualRefresh()"><i class="ti ti-refresh"></i> Refresh</button>
     <button onclick="openConfigModal()" title="Configuration"><i class="ti ti-settings"></i> Config</button>
     <button onclick="toggleDark()" id="dark-btn" title="Toggle dark mode"><i class="ti ti-moon" id="dark-icon"></i></button>
   </div>
@@ -202,6 +207,11 @@
       <button onclick="openLogs('bdag-miner-node-2')"><i class="ti ti-terminal-2"></i> Node 2 logs</button>
       <button onclick="openLogs('asic-pool')">        <i class="ti ti-terminal-2"></i> Pool logs</button>
     </div>
+    <div class="ctrl-row" style="margin-top:6px;">
+      <button class="btn-ps" onclick="openLogsPopup('bdag-miner-node-1')" title="Open last 50 lines in a terminal window"><i class="ti ti-brand-powershell"></i> Node 1 logs</button>
+      <button class="btn-ps" onclick="openLogsPopup('bdag-miner-node-2')" title="Open last 50 lines in a terminal window"><i class="ti ti-brand-powershell"></i> Node 2 logs</button>
+      <button class="btn-ps" onclick="openLogsPopup('asic-pool')"         title="Open last 50 lines in a terminal window"><i class="ti ti-brand-powershell"></i> Pool logs</button>
+    </div>
     <div class="ctrl-status" id="bv-ctrl-status"></div>
   </div>
 
@@ -224,7 +234,7 @@
   <div class="metric">
     <div class="metric-label"><i class="ti ti-tag"></i> Version</div>
     <div class="metric-value" id="m-installer-version" style="font-size:15px;display:none;"></div>
-    <div class="metric-sub">node image &nbsp;<span id="m-version" style="color:var(--text);">&mdash;</span></div>
+    <div class="metric-sub">node version &nbsp;<span id="m-version" style="color:var(--text);">&mdash;</span></div>
   </div>
   <div class="metric">
     <div class="metric-label"><i class="ti ti-bolt"></i> Pool hashrate</div>
@@ -429,6 +439,11 @@
     <button onclick="openLogs('bdag-miner-node-2')"><i class="ti ti-terminal-2"></i> Node 2 logs</button>
     <button onclick="openLogs('asic-pool')">        <i class="ti ti-terminal-2"></i> Pool logs</button>
   </div>
+  <div class="ctrl-row" style="margin-top:6px;">
+    <button class="btn-ps" onclick="openLogsPopup('bdag-miner-node-1')" title="Open last 50 lines in a terminal window"><i class="ti ti-brand-powershell"></i> Node 1 logs</button>
+    <button class="btn-ps" onclick="openLogsPopup('bdag-miner-node-2')" title="Open last 50 lines in a terminal window"><i class="ti ti-brand-powershell"></i> Node 2 logs</button>
+    <button class="btn-ps" onclick="openLogsPopup('asic-pool')"         title="Open last 50 lines in a terminal window"><i class="ti ti-brand-powershell"></i> Pool logs</button>
+  </div>
   <div class="ctrl-status" id="ctrl-status"></div>
 </div>
 
@@ -538,6 +553,16 @@
     <i class="ti ti-chevron-down" id="backup-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
   </div>
   <div id="backup-section-body" style="display:none;margin-top:12px;">
+  <!-- Backup location -->
+  <div style="margin-bottom:10px;">
+    <p style="font-size:12px;font-weight:600;color:var(--text-sub);margin:0 0 5px;display:flex;align-items:center;gap:5px;"><i class="ti ti-folder"></i> Backup location</p>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input type="text" id="bk-location" placeholder="C:\blockdag node\data-restore\backups" style="margin-bottom:0;flex:1;font-family:monospace;font-size:12px;" />
+      <button class="btn-blue" onclick="browseBackupLocation()" title="Browse for folder" style="padding:7px 10px;flex-shrink:0;"><i class="ti ti-folder-open"></i></button>
+      <button class="btn-blue" onclick="saveBackupLocation()" style="flex-shrink:0;"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+  <hr style="border:none;border-top:1px solid var(--border);margin:4px 0 10px;">
   <!-- Schedule 1 -->
   <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 4px;">
     <p style="font-size:12px;font-weight:600;color:#555;margin:0;">Schedule 1</p>
@@ -615,6 +640,17 @@
   </div>
   <div class="ctrl-status" id="bk-status"></div>
   <div id="bk-verify-result" style="font-size:13px;color:var(--text-muted);margin-top:8px;display:none;"></div>
+  <hr style="border:none;border-top:1px solid var(--border);margin:12px 0 8px;">
+  <!-- Restore from backup -->
+  <p style="font-size:12px;font-weight:600;color:var(--text-sub);margin:0 0 6px;display:flex;align-items:center;gap:5px;"><i class="ti ti-history"></i> Restore from backup</p>
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    <select id="bk-restore-select" style="flex:1;min-width:160px;margin-bottom:0;font-size:13px;background:var(--bg-input);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 9px;" onchange="document.getElementById('bk-restore-btn').disabled=!this.value;">
+      <option value="">— select a backup —</option>
+    </select>
+    <button class="btn-blue" onclick="refreshBackupList()" style="padding:7px 10px;flex-shrink:0;" title="Refresh list"><i class="ti ti-refresh"></i></button>
+    <button class="btn-red" onclick="confirmRestore()" id="bk-restore-btn" disabled style="flex-shrink:0;"><i class="ti ti-history"></i> Restore</button>
+  </div>
+  <p class="note" style="margin-top:6px;">&#9888; Restore stops the stack and replaces all chain data. The node will re-sync from the backup point.</p>
   </div><!-- end backup-section-body -->
 </div><!-- end Backup -->
 
@@ -885,8 +921,7 @@
       <table class="workers-table">
         <thead>
           <tr>
-            <th>Worker address</th>
-            <th>IP address</th>
+            <th style="min-width:220px;">Worker address</th>
             <th>Worker name</th>
             <th title="Pool-assigned vardiff for this worker">Difficulty</th>
             <th>Hashrate (10m)</th>
@@ -895,7 +930,7 @@
           </tr>
         </thead>
         <tbody id="workers-tbody">
-          <tr><td colspan="7" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
+          <tr><td colspan="6" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1148,7 +1183,27 @@ async function fetchBlockHeight() {
   } catch(e) { set('m-height', 'Error'); }
 }
 
+// Peer count for the top metric — uses /peers/connected (same source as the
+// Connected Peers table, which is confirmed working).
+async function fetchPeerCount() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/peers/connected');
+    const j = await r.json();
+    if (j.count != null) {
+      set('m-peers',    j.count);
+      set('bv-m-peers', j.count);
+      const threshold = parseInt(document.getElementById('al-peer-thr')?.value || '5');
+      if (_lastPeerCount !== null && _lastPeerCount >= threshold && j.count < threshold)
+        browserNotify('BlockDAG Low Peers', `Only ${j.count} peers connected (threshold: ${threshold}).`);
+      _lastPeerCount = j.count;
+    }
+  } catch(e) { /* non-critical */ }
+}
+
 async function fetchNetworkAndPeers() {
+  // In server mode fetchPeerCount() handles peers via /peers/connected.
+  if (IS_SERVER) return;
   try {
     // {totalconnected, totalpeers, maxconnected, infos:[{name, connecteds, peers}]}
     const info  = await rpc('getNetworkInfo');
@@ -1156,10 +1211,8 @@ async function fetchNetworkAndPeers() {
     set('m-peers', peers);
     const chain = info.infos?.[0]?.name ?? '?';
     set('m-network', chain);
-    if (!IS_SERVER) {
-      badge('s-sync', peers > 0 ? 'Active' : 'No peers', peers > 0 ? 'ok' : 'warn');
-      set('m-sync', peers + ' connected');
-    }
+    badge('s-sync', peers > 0 ? 'Active' : 'No peers', peers > 0 ? 'ok' : 'warn');
+    set('m-sync', peers + ' connected');
     // Low-peer browser notification
     const threshold = parseInt(document.getElementById('al-peer-thr')?.value || '5');
     if (_lastPeerCount !== null && _lastPeerCount >= threshold && peers < threshold)
@@ -1187,12 +1240,9 @@ async function fetchSyncState() {
       badge('s-sync', 'Catching up', 'warn');
     }
 
-    // Network, peer count, version, and chain height from server-side RPC
+    // Network name and chain height from server-side RPC
+    // (peer count is handled by fetchPeerCount() using /peers/connected)
     if (j.network) set('m-network', j.network);
-    if (j.total_peers != null) {
-      set('m-peers', j.total_peers);
-      set('bv-m-peers', j.total_peers);
-    }
     if (j.cur_height != null) {
       set('m-blocks',    j.cur_height.toLocaleString());
       set('bv-m-blocks', j.cur_height.toLocaleString());
@@ -1346,8 +1396,11 @@ async function fetchNodeInfo() {
     const j = await r.json();
     if (j.version) {
       const tag = j.version.includes(':') ? j.version.split(':').pop() : j.version;
-      set('s-version', tag);
-      set('m-version', tag);
+      // Don't overwrite m-version with generic tags like "local" — the binary
+      // version parsed from node logs (via fetchSyncState) is more informative.
+      if (tag && tag !== 'local') {
+        set('m-version', tag);
+      }
     }
     if (j.installer_version) {
       const el = document.getElementById('m-installer-version');
@@ -1358,15 +1411,31 @@ async function fetchNodeInfo() {
 
 async function fetchMempool() {
   try {
-    const info = await rpc('getMempoolInfo');
-    if (info?.size != null) set('s-mempool', info.size.toLocaleString() + ' txs');
+    // getMempoolInfo does not exist on this node — use txpool_status (EVM port)
+    const info = await evm('txpool_status', []);
+    const pend  = parseInt(info?.pending ?? '0x0', 16);
+    const queue = parseInt(info?.queued  ?? '0x0', 16);
+    set('s-mempool', pend.toLocaleString() + ' pending · ' + queue.toLocaleString() + ' queued');
   } catch(e) { /* non-critical */ }
 }
 
 async function fetchBalance() {
-  const wallet = cfg('cfg-wallet');
-  set('w-addr', wallet);
+  // cfg-wallet is only populated after opening the config modal — fetch it
+  // from the server on first call so the balance shows without user interaction.
+  let wallet = cfg('cfg-wallet');
+  if (!wallet && IS_SERVER) {
+    try {
+      const env = await fetch('/env/config').then(r => r.json());
+      wallet = (env.MINING_ADDRESS || '').trim();
+      if (wallet) {
+        const el = document.getElementById('cfg-wallet');
+        if (el && !el.value) el.value = wallet;  // cache so next call is instant
+      }
+    } catch(e) {}
+  }
+  set('w-addr', wallet || '—');
   if (!IS_SERVER) { set('w-balance', 'Requires server'); set('m-balance', '?'); return; }
+  if (!wallet) { set('m-balance', '?'); return; }
   try {
     const hex  = await evm('eth_getBalance', [wallet, 'latest']);
     const raw  = parseInt(hex, 16) / 1e18;
@@ -1484,6 +1553,8 @@ async function fetchPoolStats() {
 
     set('p-blocks-total', j.total_blocks ?? 0);
 
+    if (j.starting_pdiff != null) set('s-pool-diff', j.starting_pdiff);
+
     const b = j.blocks ?? {};
     const mature   = b.MATURE?.count   ?? 0;
     const pending  = b.PENDING?.count  ?? 0;
@@ -1565,43 +1636,56 @@ async function fetchMinerMetrics() {
       set('s-difficulty', d + ' (pool)');
     }
 
-    // Patch workers table with real miner stats
-    if (j.wallet_full) {
-      const tbody = document.getElementById('workers-tbody');
-      if (!tbody) return;
-      const hrStr   = formatHashrate(hr_mhs) ?? '?';
-      const addrShort = j.wallet_full.length > 22 ? j.wallet_full.slice(0, 22) + '...' : j.wallet_full;
-      const worker  = j.worker_name ?? '';
-      const workerCell = worker
-        ? `<span style="color:var(--text);font-weight:500;">${worker}</span>`
-        : `<span style="color:var(--text-dim);">?</span>`;
-      if (tbody.querySelector('td[colspan]')) {
-        // "No workers" placeholder row — replace with real miner row
-        // IP and difficulty not available from miner metrics (only from pool log), show dash
-        // Column layout: 0=address, 1=ip, 2=worker, 3=difficulty, 4=hashrate, 5=blocks, 6=last seen
-        tbody.innerHTML = `<tr>
-          <td style="font-family:monospace;font-size:13px;">${addrShort}</td>
-          <td><span style="color:var(--text-sub);">&#8212;</span></td>
-          <td>${workerCell}</td>
-          <td><span style="color:var(--text-sub);">&#8212;</span></td>
-          <td>${hrStr}</td>
-          <td style="text-align:center;"><span style="color:var(--text-sub);">&#8212;</span></td>
-          <td style="color:var(--text-muted);">?</td>
-        </tr>`;
-      } else {
-        // Find the matching row and patch its live hashrate
-        // Column layout: 0=address, 1=ip, 2=worker, 3=difficulty, 4=hashrate, 5=blocks, 6=last seen
-        tbody.querySelectorAll('tr').forEach(tr => {
-          const addrTd = tr.querySelector('td:first-child');
-          if (addrTd && j.wallet_full.startsWith(addrTd.textContent.trim().replace('...', '').slice(0, 10))) {
-            if (tr.cells.length >= 6) {
-              tr.cells[4].textContent = hrStr;
-            }
-          }
-        });
-      }
-    }
+    // Cache and apply the miner patch to the workers table
+    _cachedMinerMetrics = j;
+    _applyMinerPatch(j);
   } catch(e) { /* non-critical */ }
+}
+
+// Patch the workers table with live data from the local miner control server.
+// Called both from fetchMinerMetrics() and at the end of _updateWorkersTable()
+// so the patch survives a full table rebuild without a race condition.
+function _applyMinerPatch(j) {
+  if (!j || !j.wallet_full) return;
+  const tbody = document.getElementById('workers-tbody');
+  if (!tbody) return;
+  const hr_mhs = (j.hashrate ?? 0) / 1e6;
+  const hrStr  = formatHashrate(hr_mhs) ?? '?';
+  const worker = j.worker_name ?? '';
+  const workerCell = worker
+    ? `<span style="color:var(--text);font-weight:500;">${worker}</span>`
+    : `<span style="color:var(--text-dim);">?</span>`;
+  if (tbody.querySelector('td[colspan]')) {
+    // "No workers" placeholder — replace with a real miner row
+    // Column layout: 0=address, 1=worker, 2=difficulty, 3=hashrate, 4=blocks, 5=last seen
+    const addrShort = j.wallet_full.length > 26 ? j.wallet_full.slice(0, 12) + '…' + j.wallet_full.slice(-12) : j.wallet_full;
+    tbody.innerHTML = `<tr>
+      <td style="font-family:monospace;">${addrShort}</td>
+      <td>${workerCell}</td>
+      <td><span style="color:var(--text-sub);">&#8212;</span></td>
+      <td>${hrStr}</td>
+      <td style="text-align:center;"><span style="color:var(--text-sub);">&#8212;</span></td>
+      <td style="color:var(--text-muted);">?</td>
+    </tr>`;
+  } else {
+    // Find the matching row by full address (title attr) and patch hashrate + worker name
+    // Column layout: 0=address, 1=worker, 2=difficulty, 3=hashrate, 4=blocks, 5=last seen
+    tbody.querySelectorAll('tr').forEach(tr => {
+      const addrTd  = tr.querySelector('td:first-child');
+      const fullAddr = addrTd ? (addrTd.title || addrTd.textContent).trim() : '';
+      if (!fullAddr || j.wallet_full.toLowerCase() !== fullAddr.toLowerCase()) return;
+      const wTd = tr.cells.length >= 2 ? tr.cells[1] : null;
+      const rowWorker = wTd
+        ? (wTd.querySelector('span[style*="font-weight:500"]')?.textContent || '').trim()
+        : '';
+      const localWorker = j.worker_name ?? '';
+      if (rowWorker && localWorker && rowWorker !== localWorker) return;
+      if (tr.cells.length >= 4) tr.cells[3].textContent = hrStr;
+      if (localWorker && wTd && !wTd.querySelector('span[style*="font-weight:500"]')) {
+        wTd.innerHTML = `<span style="color:var(--text);font-weight:500;">${localWorker}</span>`;
+      }
+    });
+  }
 }
 
 function _applyIntervalHoursToFields(n, h) {
@@ -1870,6 +1954,13 @@ function openLogs(container) {
   logRefreshTimer = setInterval(fetchLogs, 10000);
 }
 
+async function openLogsPopup(container) {
+  if (!IS_SERVER) return;
+  try {
+    await fetch(`/logs/popup?container=${encodeURIComponent(container)}`);
+  } catch(e) { /* fire-and-forget */ }
+}
+
 function closeLogs() {
   document.getElementById('log-modal').style.display = 'none';
   clearInterval(logRefreshTimer);
@@ -1970,12 +2061,23 @@ function toggleDark() {
 // -- Auto-refresh --------------------------------------------------------------
 
 let _refreshTimer = null;
+let _refreshSecs  = 30;
+
 function setRefresh(secs) {
   if (_refreshTimer) clearInterval(_refreshTimer);
   _refreshTimer = null;
+  _refreshSecs  = secs;
   document.querySelectorAll('.refresh-opt').forEach(b =>
     b.classList.toggle('active', +b.dataset.s === secs));
   if (secs > 0) _refreshTimer = setInterval(fetchAll, secs * 1000);
+}
+
+function manualRefresh() {
+  // Clear any stuck in-flight guard so the fetch always runs
+  fetching = false;
+  // Restart the interval from now so the next auto-tick is a full cycle away
+  if (_refreshSecs > 0) setRefresh(_refreshSecs);
+  fetchAll();
 }
 
 // -- Browser notifications -----------------------------------------------------
@@ -2136,24 +2238,17 @@ function _updateWorkersTable(miners) {
   const note  = document.getElementById('workers-note');
   if (!tbody) return;
   if (!miners || miners.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--text-sub);padding:16px 10px;">No workers active in the last 24 hours.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-sub);padding:16px 10px;">No workers active in the last 24 hours.</td></tr>`;
     return;
   }
   if (note) note.style.display = 'none';
   tbody.innerHTML = miners.map(m => {
     const hrStr  = formatHashrate(m.hashrate_mhs) ?? '—';
-    const addrShort = m.address && m.address.length > 14
-      ? m.address.slice(0, 6) + '…' + m.address.slice(-6) : (m.address || '—');
+    const addrShort = m.address && m.address.length > 26
+      ? m.address.slice(0, 12) + '…' + m.address.slice(-12) : (m.address || '—');
     const workerCell = m.worker
       ? `<span style="color:var(--text);font-weight:500;">${m.worker}</span>`
       : `<span style="color:var(--text-sub);">—</span>`;
-    const ipOk = m.ip && m.ip !== 'None' && m.ip !== '';
-    const isDockerNat = ipOk && /^(172\.(1[6-9]|2\d|3[01])\.|10\.|192\.168\.)/.test(m.ip);
-    const ipCell = !ipOk
-      ? `<span style="color:var(--text-sub);">&#8212;</span>`
-      : isDockerNat
-        ? `<span style="font-family:monospace;font-size:12px;color:var(--text-muted);" title="Docker bridge IP — real source IP hidden by NAT (${m.ip})">external</span>`
-        : `<span style="font-family:monospace;font-size:12px;">${m.ip}</span>`;
     const diffVal = m.difficulty > 0
       ? m.difficulty.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 4})
       : '<span style="color:var(--text-sub);">—</span>';
@@ -2162,8 +2257,7 @@ function _updateWorkersTable(miners) {
       ? `<span style="color:#4caf70;font-weight:600;">${blkCount}</span>`
       : `<span style="color:var(--text-sub);">—</span>`;
     return `<tr>
-      <td title="${m.address}" style="font-family:monospace;font-size:13px;cursor:help;">${addrShort}</td>
-      <td>${ipCell}</td>
+      <td title="${m.address}" style="font-family:monospace;cursor:help;">${addrShort}</td>
       <td>${workerCell}</td>
       <td style="color:var(--text-muted);font-variant-numeric:tabular-nums;">${diffVal}</td>
       <td>${hrStr}</td>
@@ -2171,6 +2265,9 @@ function _updateWorkersTable(miners) {
       <td style="color:var(--text-muted);">${m.last_active || '—'}</td>
     </tr>`;
   }).join('');
+  // Re-apply local miner patch immediately after rebuild so live hashrate/worker
+  // name are never wiped by the race between fetchPoolStats and fetchMinerMetrics.
+  _applyMinerPatch(_cachedMinerMetrics);
 }
 
 // -- Backup retention ----------------------------------------------------------
@@ -2635,6 +2732,106 @@ async function verifyBackup() {
   finally { if (btn) btn.disabled = false; }
 }
 
+// -- Backup location -----------------------------------------------------------
+
+async function fetchBackupLocation() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/backup/location');
+    const j = await r.json();
+    if (j.path) {
+      const el = document.getElementById('bk-location');
+      if (el) el.value = j.path;
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+async function browseBackupLocation() {
+  if (!IS_SERVER) { bkStatus('Browse is only available in server mode.', 'err'); return; }
+  bkStatus('Opening folder browser…', 'warn');
+  try {
+    const r = await fetch('/backup/browse');
+    const j = await r.json();
+    if (j.path) {
+      const el = document.getElementById('bk-location');
+      if (el) el.value = j.path;
+      bkStatus('', '');
+    } else if (j.cancelled) {
+      bkStatus('', '');
+    } else {
+      bkStatus(j.error ? 'Browse error: ' + j.error : 'No folder selected.', 'warn');
+    }
+  } catch(e) { bkStatus('Browse failed: ' + e.message, 'err'); }
+}
+
+async function saveBackupLocation() {
+  if (!IS_SERVER) return;
+  const el   = document.getElementById('bk-location');
+  const path = el ? el.value.trim() : '';
+  if (!path) { bkStatus('Enter a backup folder path.', 'err'); return; }
+  bkStatus('Saving…', 'warn');
+  try {
+    const r = await fetch('/backup/location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    const j = await r.json();
+    bkStatus(j.ok ? 'Backup location saved.' : 'Failed: ' + j.error, j.ok ? 'ok' : 'err');
+    if (j.ok) { refreshBackupList(); }
+  } catch(e) { bkStatus('Error: ' + e.message, 'err'); }
+  setTimeout(() => { const s = document.getElementById('bk-status'); if (s) s.textContent = ''; }, 4000);
+}
+
+// -- Restore ------------------------------------------------------------------
+
+async function refreshBackupList() {
+  if (!IS_SERVER) return;
+  const sel = document.getElementById('bk-restore-select');
+  const btn = document.getElementById('bk-restore-btn');
+  if (!sel) return;
+  try {
+    const r = await fetch('/backup/list');
+    const j = await r.json();
+    const backups = j.backups || [];
+    if (backups.length) {
+      sel.innerHTML = '<option value="">— select a backup —</option>' +
+        backups.map(b => `<option value="${b.name}">${b.label}</option>`).join('');
+    } else {
+      sel.innerHTML = '<option value="">No backups found</option>';
+    }
+    if (btn) btn.disabled = !sel.value;
+  } catch(e) { /* non-critical */ }
+}
+
+async function confirmRestore() {
+  const sel    = document.getElementById('bk-restore-select');
+  const backup = sel ? sel.value : '';
+  if (!backup) return;
+  const ok = confirm(
+    'Restore from "' + backup + '"?\n\n' +
+    'This will STOP the node stack and replace all chain data.\n' +
+    'The node will re-sync from the backup point. This cannot be undone.\n\n' +
+    'Continue?'
+  );
+  if (!ok) return;
+  const btn = document.getElementById('bk-restore-btn');
+  if (btn) btn.disabled = true;
+  bkStatus('Stopping stack and restoring — this may take several minutes…', 'warn');
+  try {
+    const r = await fetch('/backup/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ backup })
+    });
+    const j = await r.json();
+    bkStatus(j.ok ? 'Restore complete. Stack restarted.' : 'Restore failed: ' + j.error,
+             j.ok ? 'ok' : 'err');
+  } catch(e) { bkStatus('Restore failed: ' + e.message, 'err'); }
+  if (btn) btn.disabled = !(sel && sel.value);
+  setTimeout(fetchContainers, 3000);
+}
+
 // -- Payout history ------------------------------------------------------------
 
 function togglePayoutHistory() {
@@ -2741,6 +2938,7 @@ async function savePayoutConfig() {
 // -- Main loop -----------------------------------------------------------------
 
 let _lastFreezeState = false;
+let _cachedMinerMetrics = null; // last known local miner metrics — re-applied after table rebuild
 let _lastPeerCount   = null;
 
 function updateUptime() {
@@ -2778,7 +2976,7 @@ async function fetchAll() {
     // -- Tier 1: every refresh ------------------------------------------------
     const always = [
       fetchNetworkAndPeers(), fetchBestBlock(),
-      fetchSyncState(), fetchMempool(),
+      fetchSyncState(), fetchMempool(), fetchPeerCount(),
       fetchContainers(), fetchResources(),
       fetchPoolStats(), fetchMinerMetrics(), fetchHAProxyStatus()
     ];
@@ -2809,7 +3007,8 @@ async function fetchAll() {
 async function fetchStaticConfig() {
   await Promise.allSettled([
     fetchPublicIP(), fetchBackupSchedule(),
-    fetchBackupConfig(), fetchPayoutConfig(), loadPeers()
+    fetchBackupConfig(), fetchPayoutConfig(), loadPeers(),
+    fetchBackupLocation(), refreshBackupList()
   ]);
 }
 

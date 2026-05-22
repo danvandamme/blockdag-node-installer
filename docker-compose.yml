@@ -366,6 +366,7 @@ services:
       NODE_ARGS: >
         --p2ptcpport=8151
         --listen=0.0.0.0
+        ${NODE_EXTERNAL_IP:+--externalip=${NODE_EXTERNAL_IP}}
         ${NODE1_ADDPEER_FLAGS:-}
         --rpclisten=0.0.0.0:38131
         --evm.http.port=18545
@@ -421,6 +422,7 @@ services:
       NODE_ARGS: >
         --p2ptcpport=8152
         --listen=0.0.0.0
+        ${NODE_EXTERNAL_IP:+--externalip=${NODE_EXTERNAL_IP}}
         ${NODE2_ADDPEER_FLAGS:-}
         --rpclisten=0.0.0.0:38131
         --evm.http.port=18545

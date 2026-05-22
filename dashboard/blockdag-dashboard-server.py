@@ -13,7 +13,7 @@ if hasattr(sys.stdout, 'buffer'):
 if hasattr(sys.stderr, 'buffer'):
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
-import json, os, shutil, subprocess, urllib.request, re, threading, time, base64
+import json, os, shutil, subprocess, urllib.request, re, threading, time, base64, webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -51,6 +51,18 @@ COMPOSE_FILE       = INSTALL_DIR / "docker-compose.yml"
 ENV_FILE           = INSTALL_DIR / ".env"
 MAX_ALERT_HISTORY  = 50
 ALERT_COOLDOWN = 900  # seconds between repeat alerts for same condition
+
+def _get_backup_dir():
+    """Return the active backup directory — default or user-configured."""
+    try:
+        if BACKUP_CFG_FILE.exists():
+            cfg = json.loads(BACKUP_CFG_FILE.read_text())
+            custom = cfg.get("backup_dir", "").strip()
+            if custom:
+                return custom
+    except Exception:
+        pass
+    return BACKUP_DIR
 
 _alert_lock  = threading.Lock()
 _alert_state = {
@@ -100,6 +112,54 @@ def _dagtech_worker_map():
         except Exception:
             pass
     return mapping
+
+
+# ── Remote miner polling (BDAG_MINER_SCAN_TARGET) ───────────────────────────
+def _parse_remote_miners():
+    """
+    Poll remote DagTech miner control servers listed in BDAG_MINER_SCAN_TARGET
+    (comma-separated IPs or IP:port, default port 8880).  Each reachable miner
+    contributes one entry to the workers table showing its live hashrate, wallet,
+    worker name, and share counters — independent of pool-log tracking.
+    """
+    # Read from .env file (not os.environ — the server doesn't load .env into env)
+    targets = (_env_read().get("BDAG_MINER_SCAN_TARGET") or
+               os.environ.get("BDAG_MINER_SCAN_TARGET") or "").strip()
+    if not targets:
+        return []
+    results = []
+    for raw in targets.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        if ":" in raw and not raw.startswith("["):   # host:port (not IPv6)
+            host, _, port = raw.rpartition(":")
+        else:
+            host, port = raw, "8880"
+        try:
+            req = urllib.request.Request(
+                f"http://{host}:{port}/metrics",
+                headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=3) as r:
+                data = json.loads(r.read())
+            wallet = (data.get("wallet") or "").strip()
+            if not wallet:
+                continue
+            hr_hs = float(data.get("hashrate") or 0)   # H/s from control server
+            results.append({
+                "address":      wallet,
+                "worker":       (data.get("worker") or data.get("worker_name") or "").strip(),
+                "ip":           host,
+                "difficulty":   float(data.get("difficulty") or 0),
+                "last_active":  "live",
+                "accepted":     int(data.get("accepted") or 0),
+                "rejected":     int(data.get("rejected") or 0),
+                "hashrate_mhs": round(hr_hs / 1e6, 6),
+                "blocks_found": 0,
+            })
+        except Exception:
+            pass
+    return results
 
 
 # ── Pool log regex patterns (for per-worker extraction) ──────────────────────
@@ -657,10 +717,18 @@ class Handler(BaseHTTPRequestHandler):
             self._get_haproxy_status()
         elif self.path == "/backup/verify":
             self._verify_backup()
+        elif self.path == "/backup/location":
+            self._get_backup_location()
+        elif self.path == "/backup/browse":
+            self._browse_backup_location()
+        elif self.path == "/backup/list":
+            self._list_backups()
         elif self.path == "/maintenance/config":
             self._get_maintenance_config()
         elif self.path == "/env/config":
             self._get_env_config()
+        elif self.path.startswith("/logs/popup"):
+            self._open_logs_popup()
         elif self.path.startswith("/logs"):
             self._get_logs()
         else:
@@ -688,6 +756,8 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/alerts/test":      self._test_alert()
         elif p == "/payout/config":    self._set_payout_config()
         elif p == "/backup/config":    self._set_backup_config()
+        elif p == "/backup/location":  self._set_backup_location()
+        elif p == "/backup/restore":   self._do_restore()
         elif p == "/setup/tasks":      self._run_setup_tasks()
         elif p == "/peers/add":        self._add_peers()
         elif p == "/peers/clear":      self._clear_peers()
@@ -737,20 +807,27 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "results": results})
 
     def _proxy_evm(self):
-        url = self._evm_url()
-        if not url:
-            self._json({"error": "Could not get container IP"}, 502)
-            return
-        body = self._body()
-        req  = urllib.request.Request(url, data=body,
-                                      headers={"Content-Type": "application/json"})
+        # The EVM HTTP port (18545) is not exposed to the Windows host — only
+        # accessible inside the Docker bridge network.  Route through the
+        # rpc-failover container (haproxy:2.9-alpine, has busybox wget) which
+        # is already on the pool-net and can reach bdag-miner-node-1:18545.
+        body_bytes = self._body()
+        body_str   = body_bytes.decode("utf-8", errors="replace") if isinstance(body_bytes, bytes) else str(body_bytes)
         try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = r.read()
+            r = subprocess.run(
+                ["docker", "exec", "rpc-failover",
+                 "wget", "-qO-", "--timeout=10",
+                 "--post-data=" + body_str,
+                 "--header=Content-Type: application/json",
+                 "http://bdag-miner-node-1:18545"],
+                capture_output=True, timeout=15)
+            if not r.stdout:
+                self._json({"error": "EVM node returned empty response"}, 502)
+                return
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self._cors(); self.end_headers()
-            self.wfile.write(data)
+            self.wfile.write(r.stdout)
         except Exception as e:
             self._json({"error": str(e)}, 502)
 
@@ -987,6 +1064,36 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
+            # ── Merge in remote miners from BDAG_MINER_SCAN_TARGET ────────────
+            # Remote miners always appear as distinct entries using their real IP.
+            # If the remote miner has a non-empty worker name that matches an
+            # existing pool-log entry exactly, patch that entry's IP + hashrate
+            # instead of duplicating.  Blank-worker entries are never merged to
+            # avoid collisions when both entries have worker="".
+            for rm in _parse_remote_miners():
+                rm_worker = rm.get("worker", "").strip()
+                match = None
+                if rm_worker:   # only merge when a specific worker name is set
+                    match = next(
+                        (m for m in miners_list
+                         if m["address"].lower() == rm["address"].lower()
+                         and m.get("worker", "").strip() == rm_worker),
+                        None)
+                if match:
+                    if rm["hashrate_mhs"] > 0:
+                        match["hashrate_mhs"] = rm["hashrate_mhs"]
+                    match["ip"] = rm["ip"]   # replace Docker bridge IP with real IP
+                    if rm["accepted"]:
+                        match["accepted"] = rm["accepted"]
+                else:
+                    rm["blocks_found"] = blocks_by_addr.get(rm["address"].lower(), 0)
+                    miners_list.append(rm)
+
+            try:
+                starting_pdiff = float(_env_read().get("POOL_STARTING_PDIFF") or 0) or None
+            except Exception:
+                starting_pdiff = None
+
             self._json({
                 "total_blocks":   total_blocks,
                 "blocks":         blocks,
@@ -1003,6 +1110,7 @@ class Handler(BaseHTTPRequestHandler):
                 "hashrate_mhs":    hashrate_mhs,
                 "miners":          miners_list,
                 "payout_history":  payout_history,
+                "starting_pdiff":  starting_pdiff,
             })
         except Exception as e:
             self._json({"error": str(e)}, 500)
@@ -1031,7 +1139,7 @@ class Handler(BaseHTTPRequestHandler):
             result["disk_free_gb"] = result["disk_total_gb"] = None
 
         try:
-            bu = shutil.disk_usage(BACKUP_DIR)
+            bu = shutil.disk_usage(_get_backup_dir())
             result["backup_disk_free_gb"]  = round(bu.free  / 1e9, 1)
             result["backup_disk_free_pct"] = round(bu.free / bu.total * 100, 1) if bu.total else None
         except Exception:
@@ -1290,6 +1398,95 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json({"ok": False, "error": str(e)}, 500)
 
+    def _get_backup_location(self):
+        self._json({"path": _get_backup_dir()})
+
+    def _set_backup_location(self):
+        try:
+            body = json.loads(self._body())
+            path = (body.get("path") or "").strip()
+            if not path:
+                self._json({"ok": False, "error": "Path is required"}); return
+            os.makedirs(path, exist_ok=True)
+            cfg = json.loads(BACKUP_CFG_FILE.read_text()) if BACKUP_CFG_FILE.exists() else {}
+            cfg["backup_dir"] = path
+            BACKUP_CFG_FILE.write_text(json.dumps(cfg))
+            self._json({"ok": True})
+        except Exception as e:
+            self._json({"ok": False, "error": str(e)})
+
+    def _browse_backup_location(self):
+        """Open a native Windows folder picker and return the chosen path."""
+        try:
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
+                 "$dlg = New-Object System.Windows.Forms.FolderBrowserDialog;"
+                 "$dlg.Description = 'Select backup folder';"
+                 "$dlg.ShowNewFolderButton = $true;"
+                 "if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)"
+                 "  { $dlg.SelectedPath } else { '::cancelled::' }"],
+                capture_output=True, text=True, timeout=120)
+            out = r.stdout.strip()
+            if not out or out == "::cancelled::":
+                self._json({"cancelled": True})
+            else:
+                self._json({"path": out})
+        except Exception as e:
+            self._json({"error": str(e)})
+
+    def _list_backups(self):
+        try:
+            backup_path = Path(_get_backup_dir())
+            if not backup_path.exists():
+                self._json({"backups": []}); return
+            dirs = sorted(
+                [d for d in backup_path.iterdir()
+                 if d.is_dir() and d.name.startswith("blockdag-backup-")],
+                key=lambda d: d.name, reverse=True)
+            backups = []
+            for d in dirs:
+                try:
+                    ts_str = d.name.replace("blockdag-backup-", "")
+                    dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+                    label = dt.strftime("%Y-%m-%d  %H:%M:%S")
+                except Exception:
+                    label = d.name
+                backups.append({"name": d.name, "label": label})
+            self._json({"backups": backups})
+        except Exception as e:
+            self._json({"error": str(e)}, 500)
+
+    def _do_restore(self):
+        try:
+            body = json.loads(self._body())
+            backup_name = (body.get("backup") or "").strip()
+            if not backup_name:
+                self._json({"ok": False, "error": "No backup specified"}); return
+            backup_path = Path(_get_backup_dir()) / backup_name
+            if not backup_path.exists():
+                self._json({"ok": False, "error": f"Backup not found: {backup_name}"}); return
+            # Stop the full stack
+            subprocess.run(["docker", "compose", "down"],
+                           capture_output=True, timeout=120,
+                           cwd=str(INSTALL_DIR))
+            # Replace chain data for each node present in the backup
+            for node, dst_str in [("node1", NODE1_DATA), ("node2", NODE2_DATA)]:
+                src = backup_path / node
+                if not src.exists():
+                    continue
+                dst = Path(dst_str)
+                if dst.exists():
+                    shutil.rmtree(dst)
+                shutil.copytree(str(src), str(dst))
+            # Restart the stack
+            subprocess.run(["docker", "compose", "up", "-d"],
+                           capture_output=True, timeout=120,
+                           cwd=str(INSTALL_DIR))
+            self._json({"ok": True})
+        except Exception as e:
+            self._json({"ok": False, "error": str(e)})
+
     def _run_setup_tasks(self):
         setup_script = str(Path(__file__).parent / "setup-tasks.ps1")
         try:
@@ -1446,15 +1643,25 @@ class Handler(BaseHTTPRequestHandler):
             total_peers = None
             try:
                 peers = _rpc_direct("getPeerInfo")
-                if isinstance(peers, list) and peers:
-                    heights = [p.get("graphstate", {}).get("mainheight", 0) or 0 for p in peers]
-                    peer_max = max(heights) if heights else None
+                if isinstance(peers, list):
+                    # Use peer list length as a reliable fallback count
+                    total_peers = len(peers)
+                    if peers:
+                        heights = [p.get("graphstate", {}).get("mainheight", 0) or 0 for p in peers]
+                        peer_max = max(heights) if heights else None
             except Exception:
                 pass
             try:
                 net_info = _rpc_direct("getNetworkInfo")
                 if isinstance(net_info, dict):
-                    total_peers = net_info.get("totalconnected", 0)
+                    # Try the top-level field first, then fall back to infos[0].connecteds
+                    ni = net_info.get("totalconnected")
+                    if ni is None:
+                        infos_list = net_info.get("infos", [])
+                        if infos_list:
+                            ni = infos_list[0].get("connecteds")
+                    if ni is not None:
+                        total_peers = int(ni)  # authoritative count overrides getPeerInfo length
                     infos = net_info.get("infos", [])
                     if infos:
                         network = infos[0].get("name")
@@ -1659,6 +1866,33 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json({"ok": False, "error": str(e)}, 500)
 
+    def _open_logs_popup(self):
+        """Open the last 50 lines of a container's logs in a new PowerShell window,
+        then follow (-f) so the output keeps scrolling live."""
+        from urllib.parse import urlparse, parse_qs
+        qs        = parse_qs(urlparse(self.path).query)
+        container = qs.get("container", ["bdag-miner-node-1"])[0]
+        if container not in CONTAINERS:
+            self._json({"ok": False, "error": "unknown container"}, 400)
+            return
+        titles = {
+            "bdag-miner-node-1": "Node 1 Logs",
+            "bdag-miner-node-2": "Node 2 Logs",
+            "asic-pool":         "Pool Logs",
+        }
+        title = titles.get(container, f"{container} Logs")
+        cmd   = f"docker logs --tail 50 -f {container}"
+        try:
+            # Open a new PowerShell console window; -NoExit keeps it open after the
+            # command finishes (e.g. if the container stops).
+            subprocess.Popen(
+                f'start "BlockDAG {title}" powershell -NoProfile -NoExit -Command "{cmd}"',
+                shell=True
+            )
+            self._json({"ok": True})
+        except Exception as e:
+            self._json({"ok": False, "error": str(e)}, 500)
+
     def _get_logs(self):
         from urllib.parse import urlparse, parse_qs
         qs        = parse_qs(urlparse(self.path).query)
@@ -1697,7 +1931,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _do_backup(self):
         ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
-        dst = os.path.join(BACKUP_DIR, f"blockdag-backup-{ts}")
+        dst = os.path.join(_get_backup_dir(), f"blockdag-backup-{ts}")
         try:
             os.makedirs(dst, exist_ok=True)
             # node1 is the HAProxy backup node — safe to stop without dropping RPC
@@ -1861,35 +2095,43 @@ class Handler(BaseHTTPRequestHandler):
 
     def _get_haproxy_status(self):
         try:
+            # Use the internal stats HTTP endpoint (port 9999, not exposed to host).
+            # busybox wget is always present in haproxy:2.9-alpine; no socat needed.
             r = subprocess.run(
-                ["docker", "exec", "rpc-failover", "sh", "-c",
-                 "echo 'show stat' | socat stdio /var/run/haproxy/admin.sock 2>/dev/null"],
+                ["docker", "exec", "rpc-failover",
+                 "wget", "-qO-", "http://127.0.0.1:9999/;csv"],
                 capture_output=True, text=True, timeout=8)
             output = r.stdout.strip()
             if not output or r.returncode != 0:
                 self._json({"backends": {}, "active": None, "fallback": True})
                 return
             backends = {}
+            active_node = None
             for line in output.splitlines():
                 if line.startswith("#") or not line.strip():
                     continue
                 parts = line.split(",")
-                if len(parts) < 18:
+                if len(parts) < 20:
                     continue
-                pxname  = parts[0]
                 svname  = parts[1]
                 status  = parts[17]
+                is_act  = parts[19]   # "1" if server is active (not backup)
                 if svname in ("FRONTEND", "BACKEND"):
                     continue
                 backends[svname] = status
-            active = next((k for k, v in backends.items() if v == "UP"), None)
-            self._json({"backends": backends, "active": active, "fallback": False})
+                # First active (non-backup) UP server = the node currently routing traffic
+                if status == "UP" and is_act == "1" and active_node is None:
+                    active_node = svname
+            # Fallback: if no active server found, take any UP server (e.g. backup in use)
+            if active_node is None:
+                active_node = next((k for k, v in backends.items() if v == "UP"), None)
+            self._json({"backends": backends, "active": active_node, "fallback": False})
         except Exception as e:
             self._json({"backends": {}, "active": None, "fallback": True, "error": str(e)})
 
     def _verify_backup(self):
         try:
-            backup_path = Path(BACKUP_DIR)
+            backup_path = Path(_get_backup_dir())
             dirs = sorted(
                 [d for d in backup_path.iterdir()
                  if d.is_dir() and d.name.startswith("blockdag-backup-")],
@@ -2114,4 +2356,7 @@ if __name__ == "__main__":
     threading.Thread(target=_watchdog_loop, daemon=True).start()
     print(f"BlockDAG Dashboard  ->  http://localhost:{PORT}")
     print("Press Ctrl+C to stop.\n")
+    # Open the dashboard in the default browser after the server is bound and listening.
+    # 1.5s delay gives the HTTP server time to start accepting connections.
+    threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     ThreadingHTTPServer(("", PORT), Handler).serve_forever()

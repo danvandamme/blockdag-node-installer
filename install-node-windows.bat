@@ -249,11 +249,64 @@ REM    All can be changed after install via the dashboard Config window.
 set "POOL_FEE=2.0"
 set "POOL_DIFF=0.1"
 set "POOL_PORT=3334"
-set "POOL_PASSWORD=1234"
+set "POOL_PASSWORD="
 
 echo.
 echo   Wallet: %MINING_ADDRESS%
 echo.
+
+REM ============================================================================
+REM 4b. Detect public IP - ask about port forwarding for P2P inbound connections
+REM     If the user confirms port forwarding, NODE_EXTERNAL_IP is written to .env
+REM     so the node advertises its public address to the BlockDAG P2P network.
+REM ============================================================================
+echo [Node] Detecting public IP address...
+set "SERVER_IP="
+set "WRITE_EXTERNAL_IP="
+
+powershell -NoProfile -Command ^
+    "try { $ip = (Invoke-WebRequest -Uri 'https://api.ipify.org' -UseBasicParsing -TimeoutSec 5).Content.Trim(); if ($ip -match '^\d+\.\d+\.\d+\.\d+$') { $ip } }" ^
+    > "%TEMP%\bdag_ip.txt" 2>nul
+if exist "%TEMP%\bdag_ip.txt" set /p SERVER_IP=<"%TEMP%\bdag_ip.txt"
+del "%TEMP%\bdag_ip.txt" >nul 2>&1
+
+if not "!SERVER_IP!"=="" (
+    echo.
+    echo   Detected public IP: !SERVER_IP!
+    echo.
+    echo   If you have ports 8151 and 8152 forwarded on your router to this PC,
+    echo   your node will advertise its public address so the BlockDAG P2P network
+    echo   can reach you directly ^(more peers, faster sync^).
+    echo.
+    call :prompt_port_forward
+    echo.
+) else (
+    REM Fall back to LAN IP for stratum display; P2P external IP left blank
+    powershell -NoProfile -Command ^
+        "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254.*' } | ForEach-Object { $a = Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue; if ($a -and -not $a.Virtual) { $_ } } | Select-Object -First 1).IPAddress" ^
+        > "%TEMP%\bdag_ip.txt" 2>nul
+    if exist "%TEMP%\bdag_ip.txt" set /p SERVER_IP=<"%TEMP%\bdag_ip.txt"
+    del "%TEMP%\bdag_ip.txt" >nul 2>&1
+    echo [Node] Could not detect public IP - P2P external IP will be left blank.
+)
+if "!SERVER_IP!"=="" set "SERVER_IP=YOUR_SERVER_IP"
+goto :port_forward_done
+
+:prompt_port_forward
+    set "PF_CHOICE="
+    set /p "PF_CHOICE=  Are ports 8151/8152 forwarded on your router to this PC? [Y/N]: "
+    if /i "!PF_CHOICE!"=="Y" ( set "WRITE_EXTERNAL_IP=!SERVER_IP!" & exit /b )
+    if /i "!PF_CHOICE!"=="N" ( set "WRITE_EXTERNAL_IP=" & exit /b )
+    echo   Please enter Y or N.
+    goto :prompt_port_forward
+
+:port_forward_done
+echo [Node] Server IP: !SERVER_IP!
+if not "!WRITE_EXTERNAL_IP!"=="" (
+    echo [Node] P2P external IP: !WRITE_EXTERNAL_IP! ^(will be written to .env^)
+) else (
+    echo [Node] P2P external IP: ^(none - outbound connections only^)
+)
 
 REM ============================================================================
 REM 5. Create install directory and copy all bundled files
@@ -358,6 +411,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$lines = $lines -replace '^POOL_STARTING_PDIFF=.*', 'POOL_STARTING_PDIFF=%POOL_DIFF%';" ^
     "$lines = $lines -replace '^BDAG_MINER_POOL_PASSWORD=.*', 'BDAG_MINER_POOL_PASSWORD=%POOL_PASSWORD%';" ^
     "$lines = $lines -replace '^PG_URL=.*', 'PG_URL=postgres://test:test@pool-db:5432/pool';" ^
+    "$lines = $lines -replace '^NODE_EXTERNAL_IP=.*', 'NODE_EXTERNAL_IP=%WRITE_EXTERNAL_IP%';" ^
     "$lines += 'INSTALLER_VERSION=%VERSION%';" ^
     "$lines | Set-Content $dst -Encoding UTF8"
 
@@ -387,29 +441,6 @@ if defined PYTHON_EXE (
 )
 
 REM ============================================================================
-REM 7b. Detect server IP (public first, LAN fallback)
-REM ============================================================================
-echo [Node] Detecting server IP address...
-set "SERVER_IP="
-
-powershell -NoProfile -Command ^
-    "try { $ip = (Invoke-WebRequest -Uri 'https://api.ipify.org' -UseBasicParsing -TimeoutSec 5).Content.Trim(); if ($ip -match '^\d+\.\d+\.\d+\.\d+$') { $ip } }" ^
-    > "%TEMP%\bdag_ip.txt" 2>nul
-if exist "%TEMP%\bdag_ip.txt" set /p SERVER_IP=<"%TEMP%\bdag_ip.txt"
-del "%TEMP%\bdag_ip.txt" >nul 2>&1
-
-if "!SERVER_IP!"=="" (
-    powershell -NoProfile -Command ^
-        "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254.*' } | ForEach-Object { $a = Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue; if ($a -and -not $a.Virtual) { $_ } } | Select-Object -First 1).IPAddress" ^
-        > "%TEMP%\bdag_ip.txt" 2>nul
-    if exist "%TEMP%\bdag_ip.txt" set /p SERVER_IP=<"%TEMP%\bdag_ip.txt"
-    del "%TEMP%\bdag_ip.txt" >nul 2>&1
-)
-
-if "!SERVER_IP!"=="" set "SERVER_IP=YOUR_SERVER_IP"
-echo [Node] Server IP: !SERVER_IP!
-
-REM ============================================================================
 REM 8. Write management scripts using PowerShell (handles spaces in paths)
 REM ============================================================================
 echo [Node] Writing management scripts...
@@ -427,7 +458,7 @@ REM -- Dashboard script (depends on whether Python was found) --
 if defined PYTHON_EXE (
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "$d='%INSTALL_DIR%\shortcuts'; $py='!PYTHON_EXE!'; $dir='%INSTALL_DIR%\dashboard';" ^
-        "[IO.File]::WriteAllText(\"$d\dashboard.bat\", \"@echo off`r`ncd /d `\"$dir`\"`r`necho Starting BlockDAG dashboard server...`r`necho Open http://localhost:8088 in your browser`r`necho Press Ctrl+C to stop`r`necho.`r`nstart `\"`\" `\"http://localhost:8088`\"`r`n$py blockdag-dashboard-server.py`r`npause`r`n\", [Text.Encoding]::ASCII);"
+        "[IO.File]::WriteAllText(\"$d\dashboard.bat\", \"@echo off`r`ncd /d `\"$dir`\"`r`necho Starting BlockDAG dashboard server...`r`necho Browser will open automatically.`r`necho Press Ctrl+C to stop.`r`necho.`r`n$py blockdag-dashboard-server.py`r`npause`r`n\", [Text.Encoding]::ASCII);"
 ) else (
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "$d='%INSTALL_DIR%\shortcuts';" ^
@@ -484,9 +515,7 @@ REM -- Auto-start dashboard if Python available --
 if defined PYTHON_EXE (
     echo [Node] Starting dashboard server...
     start "BlockDAG Dashboard" /d "%INSTALL_DIR%\dashboard" !PYTHON_EXE! blockdag-dashboard-server.py
-    powershell -NoProfile -Command "Start-Sleep -Seconds 2" >nul 2>&1
-    start "" "http://localhost:8088"
-    echo [Node] Dashboard started at http://localhost:8088
+    echo [Node] Dashboard started - browser will open automatically.
 )
 
 REM ============================================================================
@@ -513,7 +542,7 @@ echo.
 echo   Stratum endpoint for miners:
 echo     Host : !SERVER_IP!
 echo     Port : %POOL_PORT%
-echo     Pass : %POOL_PASSWORD%
+if defined POOL_PASSWORD (echo     Pass : %POOL_PASSWORD%) else (echo     Pass : ^(none^))
 echo.
 echo   Install directory: %INSTALL_DIR%
 echo   Config file:       %INSTALL_DIR%\.env
