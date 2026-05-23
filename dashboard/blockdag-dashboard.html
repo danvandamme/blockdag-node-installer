@@ -772,13 +772,14 @@
       <table class="workers-table">
         <thead>
           <tr>
+            <th>Wallet</th>
             <th>Tx Hash</th>
             <th>Amount (BDAG)</th>
             <th>Time</th>
           </tr>
         </thead>
         <tbody id="payout-history-tbody">
-          <tr><td colspan="3" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
+          <tr><td colspan="4" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
         </tbody>
       </table>
     </div>
@@ -796,10 +797,10 @@
       <table class="workers-table">
         <thead>
           <tr>
+            <th>Found by</th>
             <th>Block Hash</th>
             <th>Height</th>
             <th>Status</th>
-            <th>Found by</th>
             <th>Time</th>
           </tr>
         </thead>
@@ -2202,22 +2203,33 @@ function _updateRecentBlocks(recent) {
       if (dot > 0) {
         const wallet = b.finder.slice(0, dot);
         const wname  = b.finder.slice(dot + 1);
-        const ws     = wallet.length > 14 ? wallet.slice(0, 6) + '…' + wallet.slice(-4) : wallet;
-        finderCell   = `<span style="font-family:monospace;font-size:12px;" title="${b.finder}">${ws}</span>`
+        const ws     = wallet.length > 14 ? wallet.slice(0, 14) + '…' + wallet.slice(-8) : wallet;
+        finderCell   = `<span style="font-family:monospace;font-size:12px;cursor:pointer;"
+                             title="${wallet}&#10;Click to copy"
+                             onclick="navigator.clipboard.writeText('${wallet}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})">${ws}</span>`
                      + ` <span style="color:var(--text-muted);">/ ${wname}</span>`;
       } else {
-        const ws   = b.finder.length > 14 ? b.finder.slice(0, 6) + '…' + b.finder.slice(-4) : b.finder;
-        finderCell = `<span style="font-family:monospace;font-size:12px;" title="${b.finder}">${ws}</span>`;
+        const ws   = b.finder.length > 14 ? b.finder.slice(0, 14) + '…' + b.finder.slice(-8) : b.finder;
+        finderCell = `<span style="font-family:monospace;font-size:12px;cursor:pointer;"
+                           title="${b.finder}&#10;Click to copy"
+                           onclick="navigator.clipboard.writeText('${b.finder}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})">${ws}</span>`;
       }
     }
 
     return `<tr>
-      <td style="font-family:monospace;font-size:12px;cursor:pointer;"
-          title="Click to copy&#10;${b.hash}"
-          onclick="navigator.clipboard.writeText('${b.hash}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})">${shortHash}</td>
-      <td style="color:var(--text-muted);">#${(b.height||0).toLocaleString()}</td>
-      <td><span class="badge badge-${cls[b.status]||'warn'}">${b.status}</span></td>
-      <td>${finderCell}</td>
+      <td style="white-space:nowrap;">${finderCell}</td>
+      <td style="white-space:nowrap;">
+        <span style="font-family:monospace;font-size:12px;cursor:pointer;"
+              title="Click to copy&#10;${b.hash}"
+              onclick="navigator.clipboard.writeText('${b.hash}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})">${shortHash}</span>
+        ${b.height ? `<a href="https://bdagscan.com/blocks/${b.height}" target="_blank" rel="noopener"
+                         title="View on bdagscan.com"
+                         style="margin-left:5px;color:var(--text-sub);text-decoration:none;vertical-align:middle;"
+                         onclick="event.stopPropagation()">
+                       <i class="ti ti-external-link" style="font-size:12px;"></i></a>` : ''}
+      </td>
+      <td style="color:var(--text-muted);white-space:nowrap;">#${(b.height||0).toLocaleString()}</td>
+      <td style="white-space:nowrap;"><span class="badge badge-${cls[b.status]||'warn'}" style="font-size:10px;padding:2px 6px;">${b.status}</span></td>
       <td style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${b.time || '—'}</td>
     </tr>`;
   }).join('');
@@ -2248,7 +2260,9 @@ function _updateWorkersTable(miners) {
       ? m.address.slice(0, 12) + '…' + m.address.slice(-12) : (m.address || '—');
     const workerCell = m.worker
       ? `<span style="color:var(--text);font-weight:500;">${m.worker}</span>`
-      : `<span style="color:var(--text-sub);">—</span>`;
+      : m.ip
+        ? `<span style="color:var(--text-sub);font-size:12px;font-family:monospace;" title="No worker name configured — showing IP">${m.ip}</span>`
+        : `<span style="color:var(--text-sub);">—</span>`;
     const diffVal = m.difficulty > 0
       ? m.difficulty.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 4})
       : '<span style="color:var(--text-sub);">—</span>';
@@ -2846,19 +2860,32 @@ function _updatePayoutHistory(history) {
   const tbody = document.getElementById('payout-history-tbody');
   if (!tbody) return;
   if (!history || !history.length) {
-    tbody.innerHTML = `<tr><td colspan="3" style="color:var(--text-sub);padding:16px 10px;">No payouts recorded.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--text-sub);padding:16px 10px;">No payouts recorded.</td></tr>`;
     return;
   }
   tbody.innerHTML = history.map(p => {
     const h = p.tx_hash || '';
-    const shortTx = h.length > 20 ? h.slice(0, 12) + '…' + h.slice(-8) : h;
+    const w = p.wallet  || '';
+    const shortTx     = h.length > 20 ? h.slice(0, 10) + '…' + h.slice(-6) : (h || '—');
+    const shortWallet = w.length > 20 ? w.slice(0, 16) + '…' + w.slice(-8) : (w || '—');
     return `<tr>
-      <td style="font-family:monospace;font-size:13px;cursor:pointer;"
-          title="Click to copy tx hash&#10;${h}"
-          onclick="navigator.clipboard.writeText('${h}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})"
-          >${shortTx}</td>
-      <td style="font-family:monospace;">${(p.bdag||0).toFixed(8)}</td>
-      <td style="color:var(--text-muted);white-space:nowrap;">${p.time||'—'}</td>
+      <td style="font-family:monospace;font-size:13px;cursor:pointer;white-space:nowrap;"
+          title="${w}&#10;Click to copy"
+          onclick="navigator.clipboard.writeText('${w}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})"
+          >${shortWallet}</td>
+      <td style="white-space:nowrap;">
+        <span style="font-family:monospace;font-size:13px;cursor:pointer;"
+              title="Click to copy tx hash&#10;${h}"
+              onclick="navigator.clipboard.writeText('${h}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})"
+              >${shortTx}</span>
+        ${h ? `<a href="https://bdagscan.com/tx/${h}" target="_blank" rel="noopener"
+                  title="View on bdagscan.com"
+                  style="margin-left:5px;color:var(--text-sub);text-decoration:none;vertical-align:middle;"
+                  onclick="event.stopPropagation()">
+                <i class="ti ti-external-link" style="font-size:12px;"></i></a>` : ''}
+      </td>
+      <td style="font-family:monospace;white-space:nowrap;">${(p.bdag||0).toFixed(4)}</td>
+      <td style="color:var(--text-muted);white-space:nowrap;font-size:12px;">${p.time||'—'}</td>
     </tr>`;
   }).join('');
 }

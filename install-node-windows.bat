@@ -17,7 +17,7 @@ REM ============================================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
-set "VERSION=DVD-2026.0521.3"
+set "VERSION=DVD-2026.0523.1"
 set "INSTALL_DIR=C:\blockdag node"
 
 set "POOL_IMAGE=bdag-release/asic-pool:local"
@@ -40,7 +40,7 @@ if errorlevel 1 (
     echo [Node] Administrator rights required - click Yes on the UAC prompt.
     echo [Node] The installer will continue in a new window.
     set "_SELF=%~f0"
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -Verb RunAs -ArgumentList ('/d /c \"' + $env:_SELF + '\"')"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -Verb RunAs -ArgumentList ('/d /k ' + [char]34 + $env:_SELF + [char]34)"
     exit /b
 )
 
@@ -419,6 +419,17 @@ if errorlevel 1 ( echo [Node] ERROR: Failed to write .env & pause & exit /b 1 )
 
 REM  asic-pool\.env must be the same file (compose reads it for pool-db and pool)
 copy /y "%INSTALL_DIR%\.env" "%INSTALL_DIR%\asic-pool\.env" >nul
+
+REM  Substitute @@RPC_AUTH@@ in haproxy.cfg with base64(NODE_RPC_USER:NODE_RPC_PASS)
+REM  so the IBD-aware health check can authenticate against the node RPC.
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$env_content = Get-Content '%INSTALL_DIR%\.env';" ^
+    "$user = ($env_content | Select-String '^NODE_RPC_USER=(.+)').Matches[0].Groups[1].Value;" ^
+    "$pass = ($env_content | Select-String '^NODE_RPC_PASS=(.+)').Matches[0].Groups[1].Value;" ^
+    "$auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(\"${user}:${pass}\"));" ^
+    "(Get-Content '%INSTALL_DIR%\haproxy.cfg' -Raw) -replace '@@RPC_AUTH@@', $auth | Set-Content '%INSTALL_DIR%\haproxy.cfg' -NoNewline"
+
+if errorlevel 1 ( echo [Node] ERROR: Failed to patch haproxy.cfg auth token & pause & exit /b 1 )
 
 echo [Node] Configuration files written.
 

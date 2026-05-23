@@ -81,8 +81,75 @@ WATCHDOG_CONTAINERS = ["bdag-miner-node-1", "bdag-miner-node-2"]
 
 _watchdog_lock  = threading.Lock()
 _watchdog_state = {}        # container -> {"frozen_since": float|None}
-_node_id_cache      = {}     # container_name -> node_id string (cached from startup log)
+_node_id_cache      = {}     # container_name -> node_id string
 _node_version_cache = {}     # container_name -> version string (cached from startup log)
+
+# ---------------------------------------------------------------------------
+# secp256k1 peer-ID derivation (pure Python stdlib — no external deps)
+# Derives the libp2p peer ID from a 64-char hex private key (network.key).
+# ---------------------------------------------------------------------------
+_SEC_P  = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+_SEC_GX = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+_SEC_GY = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
+_B58_AL = b'123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+
+def _sec_pt_add(P, Q):
+    p = _SEC_P
+    if P is None: return Q
+    if Q is None: return P
+    if P[0] == Q[0]:
+        if P[1] != Q[1]: return None
+        lam = (3 * P[0] * P[0]) * pow(2 * P[1], p - 2, p) % p
+    else:
+        lam = (Q[1] - P[1]) * pow(Q[0] - P[0], p - 2, p) % p
+    x = (lam * lam - P[0] - Q[0]) % p
+    y = (lam * (P[0] - x) - P[1]) % p
+    return (x, y)
+
+def _sec_scalar_mult(k, P):
+    R, Q = None, P
+    while k:
+        if k & 1:
+            R = _sec_pt_add(R, Q)
+        Q = _sec_pt_add(Q, Q)
+        k >>= 1
+    return R
+
+def _b58enc(data: bytes) -> str:
+    n = int.from_bytes(data, 'big')
+    res = []
+    while n:
+        n, r = divmod(n, 58)
+        res.append(_B58_AL[r:r+1])
+    res.reverse()
+    # Preserve leading zero bytes as '1' characters
+    pad = 0
+    for b in data:
+        if b == 0: pad += 1
+        else: break
+    return (_B58_AL[0:1] * pad + b''.join(res)).decode()
+
+def _derive_peer_id(hex_key: str) -> str | None:
+    """Derive libp2p peer ID from a hex-encoded secp256k1 private key."""
+    try:
+        hex_key = hex_key.strip()
+        if len(hex_key) != 64:
+            return None
+        k = int(hex_key, 16)
+        G = (_SEC_GX, _SEC_GY)
+        pt = _sec_scalar_mult(k, G)
+        if pt is None:
+            return None
+        # Compressed public key (33 bytes)
+        prefix = b'\x02' if pt[1] % 2 == 0 else b'\x03'
+        pub = prefix + pt[0].to_bytes(32, 'big')
+        # Protobuf PublicKey: field1=key_type(secp256k1=2), field2=key_data(33 bytes)
+        proto = b'\x08\x02\x12\x21' + pub   # 4 + 33 = 37 bytes
+        # Identity multihash: code=0x00, length=0x25 (37), then the key bytes
+        mh = b'\x00\x25' + proto            # 39 bytes total
+        return _b58enc(mh)
+    except Exception:
+        return None
 
 # DagTech miner config.env search paths (wallet → worker_name lookup)
 _DAGTECH_CONFIG_PATHS = [
@@ -179,11 +246,19 @@ def _parse_pool_workers():
     Uses --tail 5000 so auth events from hours ago are still captured (a
     miner that connected 2h ago won't re-authenticate until it reconnects).
 
-    Parsing strategy (sequential, single pass):
-      AUTH_ACCEPT   → new worker entry keyed by 'wallet.workername'
-      PUSHDIF       → assigns difficulty to the worker on that IP:port
-      valid share   → increments share count; sums difficulty for last 10 min
-                      to compute hashrate (H/s = sum_diff_10min / 600)
+    IMPORTANT — Docker NAT: the pool runs inside Docker and sees ALL external
+    miners as source IP 172.18.0.1 (the bridge gateway).  Real client IPs are
+    invisible.  Port is the only field that uniquely identifies a connection,
+    so workers are keyed by (ip, port).  Each TCP connection — and therefore
+    each physical miner — gets its own row even when multiple miners use the
+    same bare wallet address.
+
+    Parsing strategy (single sequential pass):
+      AUTH_ACCEPT  → new worker entry keyed by (ip, port)
+      PUSHDIF      → updates difficulty on the (ip, port) entry directly
+      valid share  → increments share count; when multiple connections share
+                     the same user string (same bare wallet, no .workername),
+                     share difficulty is split equally between them
     """
     try:
         r = subprocess.run(
@@ -196,15 +271,14 @@ def _parse_pool_workers():
     now          = datetime.now()
     ten_min_ago  = now - timedelta(minutes=10)
 
-    workers    = {}   # user_str → miner dict
-    ip_to_user = {}   # "ip:port" → user_str (most recent auth on that connection)
+    workers = {}   # (ip, port) → miner dict  — port is unique per TCP connection
 
     for line in lines:
         ts_str = ""
         ts_dt  = None
         ts_m = _POOL_LOG_TS_RE.match(line)
         if ts_m:
-            raw    = ts_m.group(1)                              # "2024/01/15 14:30:00"
+            raw    = ts_m.group(1)                              # "20240115 14:30:00"
             ts_str = raw[:10].replace("/", "-") + raw[10:16]   # "2024-01-15 14:30"
             try:
                 ts_dt = datetime.strptime(raw, "%Y/%m/%d %H:%M:%S")
@@ -214,54 +288,68 @@ def _parse_pool_workers():
         auth = _POOL_AUTH_RE.search(line)
         if auth:
             ip, port, user = auth.group(1), auth.group(2), auth.group(3)
-            ip_to_user[f"{ip}:{port}"] = user
+            # Pool validates bare EVM address; wallet.workername format is rejected.
+            # user is always just the bare wallet address here.
             dot    = user.rfind(".")
             wallet = user[:dot] if dot > 0 else user
             wname  = user[dot + 1:] if dot > 0 else ""
-            if user not in workers:
-                workers[user] = {
-                    "address":        wallet,
-                    "worker":         wname,
-                    "ip":             ip,
-                    "difficulty":     0,
-                    "last_active":    ts_str,
-                    "accepted":       0,
-                    "rejected":       0,
-                    "hashrate_mhs":   0,
-                    "_diff_10m":      0.0,   # difficulty sum for last 10 min (hashrate)
+            key = (ip, port)
+            if key not in workers:
+                workers[key] = {
+                    "address":      wallet,
+                    "worker":       wname,
+                    "ip":           ip,
+                    "port":         port,
+                    "difficulty":   0,
+                    "last_active":  ts_str,
+                    "accepted":     0,
+                    "rejected":     0,
+                    "hashrate_mhs": 0,
+                    "_diff_10m":    0.0,   # difficulty sum for last 10 min (hashrate)
+                    "_user":        user,  # kept for share matching
                 }
             else:
-                # Reconnect — refresh IP and bump auth timestamp
-                workers[user]["ip"] = ip
-                if ts_str > workers[user]["last_active"]:
-                    workers[user]["last_active"] = ts_str
+                # Reconnect on same port — refresh auth info and timestamp
+                workers[key]["address"]  = wallet
+                workers[key]["worker"]   = wname
+                workers[key]["_user"]    = user
+                if ts_str > workers[key]["last_active"]:
+                    workers[key]["last_active"] = ts_str
             continue
 
         diff_m = _POOL_PUSHDIF_RE.search(line)
         if diff_m:
             ip, port = diff_m.group(1), diff_m.group(2)
-            user = ip_to_user.get(f"{ip}:{port}")
-            if user and user in workers:
-                workers[user]["difficulty"] = float(diff_m.group(3))
+            key = (ip, port)
+            if key in workers:
+                workers[key]["difficulty"] = float(diff_m.group(3))
             continue
 
         share = _POOL_SHARE_RE.search(line)
         if share:
             share_diff = float(share.group(1))
             user       = share.group(2)
-            if user in workers:
-                workers[user]["accepted"] += 1
-                if ts_str > workers[user]["last_active"]:
-                    workers[user]["last_active"] = ts_str
-                # Accumulate difficulty for the 10-minute hashrate window
+            # Find all connected workers that authenticated with this user string.
+            # When multiple miners use the same bare wallet the share can't be
+            # attributed to a specific machine, so split difficulty equally between
+            # all active connections for that wallet.
+            matching = [w for w in workers.values() if w.get("_user") == user]
+            if not matching:
+                continue
+            split_diff = share_diff / len(matching)
+            for w in matching:
+                w["accepted"] += 1
+                if ts_str > w["last_active"]:
+                    w["last_active"] = ts_str
                 if ts_dt and ts_dt >= ten_min_ago:
-                    workers[user]["_diff_10m"] += share_diff
+                    w["_diff_10m"] += split_diff
 
-    # Compute hashrate from recent share difficulty, then strip the temp key
+    # Compute hashrate from recent share difficulty, then strip internal keys
     for w in workers.values():
         diff_10m = w.pop("_diff_10m", 0.0)
         if diff_10m > 0:
             w["hashrate_mhs"] = round(diff_10m / 600 / 1e6, 4)
+        w.pop("_user", None)
 
     return sorted(workers.values(),
                   key=lambda x: x.get("last_active") or "",
@@ -870,14 +958,26 @@ class Handler(BaseHTTPRequestHandler):
             payout_history = []
             try:
                 ph = psql(
-                    "SELECT tx_hash, amount, to_char(created_at,'MM-DD HH24:MI') "
-                    "FROM payouts ORDER BY created_at DESC LIMIT 20")
+                    "SELECT DISTINCT ON (p.id) "
+                    "  p.tx_hash, p.amount, "
+                    "  to_char(p.created_at,'MM-DD HH24:MI'), "
+                    "  COALESCE(c.miner_address, '') "
+                    "FROM payouts p "
+                    "LEFT JOIN credits c "
+                    "  ON c.amount = p.amount "
+                    "  AND c.is_paid = true "
+                    "  AND c.miner_address IS NOT NULL "
+                    "  AND c.miner_address != '' "
+                    "ORDER BY p.id DESC, "
+                    "  ABS(EXTRACT(EPOCH FROM (p.created_at - c.created_at))) "
+                    "LIMIT 20")
                 for row in ph:
-                    if len(row) >= 3:
+                    if len(row) >= 4:
                         payout_history.append({
                             "tx_hash": str(row[0]),
                             "bdag":    round(int(row[1]) / 1e18, 8),
                             "time":    str(row[2]),
+                            "wallet":  str(row[3]),
                         })
             except Exception:
                 pass
@@ -1022,9 +1122,23 @@ class Handler(BaseHTTPRequestHandler):
 
             # ── Per-worker list from pool logs (shows real worker names + diff) ─
             miners_list = _parse_pool_workers()
+            # Count distinct log-tracked workers per wallet so the DB fallback
+            # doesn't assign the wallet-level total to every individual worker row.
+            _wallet_worker_count: dict = {}
             for w in miners_list:
-                w["hashrate_mhs"]  = hashrate_by_addr.get(w["address"].lower(), 0)
-                w["blocks_found"]  = blocks_by_addr.get(w["address"].lower(), 0)
+                _k = w["address"].lower()
+                _wallet_worker_count[_k] = _wallet_worker_count.get(_k, 0) + 1
+            for w in miners_list:
+                # Prefer the per-worker log-based hashrate from _parse_pool_workers().
+                # Fall back to the DB wallet total only when the log gave nothing
+                # AND this is the sole worker for that wallet (total == per-worker).
+                log_hr = w.get("hashrate_mhs") or 0
+                if log_hr <= 0:
+                    if _wallet_worker_count.get(w["address"].lower(), 0) == 1:
+                        w["hashrate_mhs"] = hashrate_by_addr.get(w["address"].lower(), 0)
+                    # else: multiple workers, no recent log shares → can't split wallet
+                    # total meaningfully, leave at 0 rather than show an inflated value.
+                w["blocks_found"] = blocks_by_addr.get(w["address"].lower(), 0)
 
             # ── Fall back to DB miners table if log parse returned nothing ──────
             if not miners_list:
@@ -1728,30 +1842,21 @@ class Handler(BaseHTTPRequestHandler):
         else:
             _node_id_cache.pop(container, None)
 
-        # The node logs its own libp2p peer ID exactly once at startup:
-        #   "Node started p2p server (TCP):multiAddr=/ip4/0.0.0.0/tcp/PORT/p2p/16Uiu2H..."
-        # The 0.0.0.0 listener address uniquely identifies this as the LOCAL node.
-        # All other 16Uiu2H strings in the log are REMOTE peers (addpeer args, peer
-        # connections) which must NOT be confused with the node's own identity.
+        # Derive the libp2p peer ID directly from the node's network.key file.
+        # The key is stored as 64 ASCII hex chars (32-byte secp256k1 private key).
+        # Derivation: privkey → secp256k1 compressed pubkey → protobuf PublicKey
+        #             → identity multihash → base58btc = the peer ID.
+        # This is deterministic and works regardless of log format changes.
         try:
-            r2 = subprocess.run(
-                ["docker", "inspect", "--format", "{{.State.StartedAt}}", container],
+            r = subprocess.run(
+                ["docker", "exec", container, "cat", "/data/mainnet/network.key"],
                 capture_output=True, text=True, timeout=5)
-            if r2.returncode == 0:
-                since_str = r2.stdout.strip().split(".")[0] + "Z"
-                started = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
-                until_str = (started + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
-                r3 = subprocess.run(
-                    ["docker", "logs", "--since", since_str, "--until", until_str, container],
-                    capture_output=True, text=True, timeout=10)
-                logs = re.sub(r'\x1b\[[0-9;]*m|\[0m', '', r3.stdout + r3.stderr)
-                for line in logs.splitlines():
-                    # Match only the self-announcement line (0.0.0.0 = all interfaces = local listener)
-                    m = re.search(r'multiAddr=/ip4/0\.0\.0\.0/tcp/\d+/p2p/(16Uiu2H\w+)', line)
-                    if m:
-                        nid = m.group(1).strip(",:")
-                        _node_id_cache[container] = nid
-                        return nid
+            if r.returncode == 0:
+                hex_key = r.stdout.strip()
+                nid = _derive_peer_id(hex_key)
+                if nid:
+                    _node_id_cache[container] = nid
+                    return nid
         except Exception:
             pass
 
