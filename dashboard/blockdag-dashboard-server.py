@@ -1143,15 +1143,33 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
-            # Blocks found today
-            blocks_today = 0
-            try:
-                bt = psql("SELECT COUNT(*) FROM blocks "
-                          "WHERE created_at > NOW() - INTERVAL '24 hours'")
-                if bt:
-                    blocks_today = int(bt[0][0])
-            except Exception:
-                pass
+            # Blocks found in time windows (wallet-filtered when wallet_filter set)
+            _wf_join  = (f"JOIN credits c ON c.block_hash = b.hash "
+                         f"WHERE LOWER(c.miner_address) = '{wallet_filter}' AND "
+                         if wallet_filter else "")
+            _wf_where = (f"JOIN credits c ON c.block_hash = b.hash "
+                         f"WHERE LOWER(c.miner_address) = '{wallet_filter}'"
+                         if wallet_filter else "")
+            def _count_blocks(interval):
+                """Count distinct blocks in the given interval, wallet-filtered if applicable."""
+                if wallet_filter:
+                    q = (f"SELECT COUNT(DISTINCT b.hash) FROM blocks b "
+                         f"JOIN credits c ON c.block_hash = b.hash "
+                         f"WHERE LOWER(c.miner_address) = '{wallet_filter}' "
+                         f"AND b.created_at > NOW() - INTERVAL '{interval}'")
+                else:
+                    q = (f"SELECT COUNT(*) FROM blocks "
+                         f"WHERE created_at > NOW() - INTERVAL '{interval}'")
+                try:
+                    r = psql(q)
+                    return int(r[0][0]) if r else 0
+                except Exception:
+                    return 0
+
+            blocks_hour  = _count_blocks("1 hour")
+            blocks_today = _count_blocks("24 hours")
+            blocks_week  = _count_blocks("7 days")
+            blocks_month = _count_blocks("30 days")
 
             # Round duration: seconds since last block
             round_secs = None
@@ -1317,7 +1335,10 @@ class Handler(BaseHTTPRequestHandler):
                 "health":         health,
                 "shares_accepted": shares_accepted,
                 "shares_rejected": shares_rejected,
+                "blocks_hour":     blocks_hour,
                 "blocks_today":    blocks_today,
+                "blocks_week":     blocks_week,
+                "blocks_month":    blocks_month,
                 "round_secs":      round_secs,
                 "hashrate_mhs":    hashrate_mhs,
                 "miners":          miners_list,

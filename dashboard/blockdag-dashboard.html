@@ -375,8 +375,8 @@
       <span class="row-value" id="p-shares">&mdash;</span>
     </div>
     <div class="row">
-      <span class="row-label"><i class="ti ti-calendar-stats"></i> Blocks today</span>
-      <span class="row-value" id="p-blocks-today">&mdash;</span>
+      <span class="row-label"><i class="ti ti-calendar-stats"></i> Blocks (1h / 24h / 7d / 30d)</span>
+      <span class="row-value" id="p-blocks-periods">&mdash;</span>
     </div>
     <div class="row">
       <span class="row-label"><i class="ti ti-clock"></i> Round duration</span>
@@ -1543,7 +1543,17 @@ async function fetchPoolStats() {
         acc.toLocaleString() + ' ok / <span style="color:' + rejColor + '">' + rej + ' bad (' + rejPct + '% rej)</span>';
     }
 
-    set('p-blocks-today', j.blocks_today ?? 0);
+    {
+      const bh = j.blocks_hour  ?? 0;
+      const bd = j.blocks_today ?? 0;
+      const bw = j.blocks_week  ?? 0;
+      const bm = j.blocks_month ?? 0;
+      set('p-blocks-periods',
+          `<span title="last hour">${bh.toLocaleString()}</span>` +
+          ` / <span title="last 24h">${bd.toLocaleString()}</span>` +
+          ` / <span title="last 7 days">${bw.toLocaleString()}</span>` +
+          ` / <span title="last 30 days">${bm.toLocaleString()}</span>`);
+    }
 
     if (j.round_secs != null) {
       const rh = Math.floor(j.round_secs / 3600);
