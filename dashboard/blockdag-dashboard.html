@@ -759,6 +759,56 @@
   </div><!-- end alerts-section-body -->
 </div><!-- end Alerts -->
 
+<!-- Watchdogs (collapsible) -->
+<div class="section">
+  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('watchdogs')">
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-shield-check"></i> Watchdogs</p>
+    <i class="ti ti-chevron-down" id="watchdogs-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+  </div>
+  <div id="watchdogs-section-body" style="display:none;margin-top:12px;">
+  <p class="note" style="margin-bottom:14px;">Auto-restart containers when stuck. Changes take effect on the next watchdog tick — no dashboard restart needed.</p>
+
+  <!-- Node Freeze Watchdog -->
+  <p style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px;">Node Freeze Watchdog</p>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-power"></i> Enabled</span>
+    <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+      <input type="checkbox" id="wd-node-enabled" checked />
+      <span style="font-size:13px;color:var(--text-sub);">Auto-restart frozen nodes</span>
+    </label>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-clock-pause"></i> Grace period (s)</span>
+    <input type="number" id="wd-node-grace" min="30" value="300" style="width:90px;" title="How long the node must be frozen before auto-restart" />
+  </div>
+  <div class="row" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-row);">
+    <span class="row-label"><i class="ti ti-hourglass"></i> Startup ignore (s)</span>
+    <input type="number" id="wd-node-startup" min="0" value="300" style="width:90px;" title="Ignore containers that restarted less than this many seconds ago" />
+  </div>
+
+  <!-- Pool Nonce Watchdog -->
+  <p style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px;">Pool Nonce Watchdog</p>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-power"></i> Enabled</span>
+    <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+      <input type="checkbox" id="wd-pool-enabled" checked />
+      <span style="font-size:13px;color:var(--text-sub);">Auto-restart on nonce errors</span>
+    </label>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-clock-pause"></i> Grace period (s)</span>
+    <input type="number" id="wd-pool-grace" min="30" value="180" style="width:90px;" title="How long nonce-too-low must persist before auto-restart" />
+  </div>
+  <div class="row" style="margin-bottom:14px;">
+    <span class="row-label"><i class="ti ti-hourglass"></i> Startup ignore (s)</span>
+    <input type="number" id="wd-pool-startup" min="0" value="120" style="width:90px;" title="Ignore pool that restarted less than this many seconds ago" />
+  </div>
+
+  <button class="btn-blue" onclick="saveWatchdogConfig()"><i class="ti ti-device-floppy"></i> Save</button>
+  <div class="ctrl-status" id="wd-status"></div>
+  </div><!-- end watchdogs-section-body -->
+</div><!-- end Watchdogs -->
+
 </div><!-- end panels-bottom-grid -->
 
 <!-- Payout History section (full width, collapsible) -->
@@ -2973,6 +3023,51 @@ async function savePayoutConfig() {
   }
 }
 
+// -- Watchdog config -----------------------------------------------------------
+
+async function loadWatchdogConfig() {
+  if (!IS_SERVER) return;
+  try {
+    const r = await fetch('/watchdog/config');
+    const j = await r.json();
+    if (j.error) return;
+    document.getElementById('wd-node-enabled').checked = j.node_watchdog_enabled !== false;
+    document.getElementById('wd-node-grace').value     = j.node_grace   ?? 300;
+    document.getElementById('wd-node-startup').value   = j.node_startup ?? 300;
+    document.getElementById('wd-pool-enabled').checked = j.pool_watchdog_enabled !== false;
+    document.getElementById('wd-pool-grace').value     = j.pool_grace   ?? 180;
+    document.getElementById('wd-pool-startup').value   = j.pool_startup ?? 120;
+  } catch(e) { /* non-critical */ }
+}
+
+async function saveWatchdogConfig() {
+  if (!IS_SERVER) return;
+  const st  = document.getElementById('wd-status');
+  const cfg = {
+    node_watchdog_enabled: document.getElementById('wd-node-enabled').checked,
+    node_grace:   parseInt(document.getElementById('wd-node-grace').value)   || 300,
+    node_startup: parseInt(document.getElementById('wd-node-startup').value) || 300,
+    pool_watchdog_enabled: document.getElementById('wd-pool-enabled').checked,
+    pool_grace:   parseInt(document.getElementById('wd-pool-grace').value)   || 180,
+    pool_startup: parseInt(document.getElementById('wd-pool-startup').value) || 120,
+  };
+  st.textContent = 'Saving...'; st.className = 'ctrl-status warn';
+  try {
+    const r = await fetch('/watchdog/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg)
+    });
+    const j = await r.json();
+    st.textContent = j.ok ? 'Saved.' : ('Error: ' + (j.error || 'unknown'));
+    st.className   = 'ctrl-status ' + (j.ok ? 'ok' : 'err');
+    if (j.ok) setTimeout(() => { st.textContent = ''; st.className = 'ctrl-status'; }, 3000);
+  } catch(e) {
+    st.textContent = 'Request failed: ' + e.message;
+    st.className   = 'ctrl-status err';
+  }
+}
+
 // -- Main loop -----------------------------------------------------------------
 
 let _lastFreezeState = false;
@@ -3054,6 +3149,7 @@ initNotifications();
 setRefresh(30);
 loadAlertConfig();
 loadMaintenanceConfig();
+loadWatchdogConfig();
 _restoreBackupScheduleLocal();
 try { switchView(localStorage.getItem('bdag-view') || 'adv'); } catch(e) { switchView('adv'); }
 fetchPeersCount();

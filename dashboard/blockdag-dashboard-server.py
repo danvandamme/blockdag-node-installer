@@ -45,7 +45,8 @@ ALERTS_FILE      = Path(__file__).parent / "alerts.json"
 PAYOUT_FILE      = Path(__file__).parent / "payout.json"
 BACKUP_CFG_FILE  = Path(__file__).parent / "backup-config.json"
 ALERT_HISTORY_FILE = Path(__file__).parent / "alert-history.json"
-MAINTENANCE_FILE = Path(__file__).parent / "maintenance.json"
+MAINTENANCE_FILE  = Path(__file__).parent / "maintenance.json"
+WATCHDOG_CFG_FILE = Path(__file__).parent / "watchdog-config.json"
 PEERS_FILE         = Path(__file__).parent / "Network Peers.txt"
 PEERS_MANAGED_FILE = Path(__file__).parent / "peers-managed.txt"
 COMPOSE_FILE       = INSTALL_DIR / "docker-compose.yml"
@@ -552,6 +553,17 @@ def _save_alert_cfg(cfg):
     ALERTS_FILE.write_text(json.dumps(cfg, indent=2))
 
 
+def _load_watchdog_cfg():
+    try:
+        return json.loads(WATCHDOG_CFG_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _save_watchdog_cfg(cfg):
+    WATCHDOG_CFG_FILE.write_text(json.dumps(cfg, indent=2))
+
+
 def _send_alert(msg, cfg=None):
     _append_alert_history(msg)
     if cfg is None:
@@ -878,6 +890,8 @@ class Handler(BaseHTTPRequestHandler):
             self._list_backups()
         elif self.path == "/maintenance/config":
             self._get_maintenance_config()
+        elif self.path == "/watchdog/config":
+            self._get_watchdog_config()
         elif self.path == "/env/config":
             self._get_env_config()
         elif self.path.startswith("/logs/popup"):
@@ -916,6 +930,7 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/peers/clear":      self._clear_peers()
         elif p == "/peers/save":       self._save_peers()
         elif p == "/maintenance/config": self._set_maintenance_config()
+        elif p == "/watchdog/config":  self._save_watchdog_config()
         elif p == "/env/config":       self._save_env_config()
         else:                          self.send_error(404)
 
@@ -2501,9 +2516,45 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json({"ok": False, "error": str(e)}, 500)
 
+    def _get_watchdog_config(self):
+        try:
+            cfg = _load_watchdog_cfg()
+            self._json({
+                "node_watchdog_enabled": cfg.get("node_watchdog_enabled", True),
+                "node_grace":            cfg.get("node_grace",   WATCHDOG_GRACE),
+                "node_startup":          cfg.get("node_startup", WATCHDOG_STARTUP),
+                "pool_watchdog_enabled": cfg.get("pool_watchdog_enabled", True),
+                "pool_grace":            cfg.get("pool_grace",   POOL_WATCHDOG_GRACE),
+                "pool_startup":          cfg.get("pool_startup", POOL_WATCHDOG_STARTUP),
+            })
+        except Exception as e:
+            self._json({"error": str(e)}, 500)
+
+    def _save_watchdog_config(self):
+        try:
+            body = json.loads(self._body())
+            cfg = {
+                "node_watchdog_enabled": bool(body.get("node_watchdog_enabled", True)),
+                "node_grace":   max(30, int(body.get("node_grace",   WATCHDOG_GRACE))),
+                "node_startup": max(0,  int(body.get("node_startup", WATCHDOG_STARTUP))),
+                "pool_watchdog_enabled": bool(body.get("pool_watchdog_enabled", True)),
+                "pool_grace":   max(30, int(body.get("pool_grace",   POOL_WATCHDOG_GRACE))),
+                "pool_startup": max(0,  int(body.get("pool_startup", POOL_WATCHDOG_STARTUP))),
+            }
+            _save_watchdog_cfg(cfg)
+            self._json({"ok": True})
+        except Exception as e:
+            self._json({"ok": False, "error": str(e)}, 500)
+
 
 def _watchdog_check(container):
     """Check one container for sync freeze. Restart it if stuck too long."""
+    _cfg    = _load_watchdog_cfg()
+    if not _cfg.get("node_watchdog_enabled", True):
+        return
+    grace   = _cfg.get("node_grace",   WATCHDOG_GRACE)
+    startup = _cfg.get("node_startup", WATCHDOG_STARTUP)
+
     now = time.time()
 
     # Skip if container restarted too recently (let it finish startup)
@@ -2515,7 +2566,7 @@ def _watchdog_check(container):
             started_str = r.stdout.strip().split(".")[0] + "Z"
             started = datetime.fromisoformat(started_str.replace("Z", "+00:00"))
             uptime_secs = (datetime.now(timezone.utc) - started).total_seconds()
-            if uptime_secs < WATCHDOG_STARTUP:
+            if uptime_secs < startup:
                 return
     except Exception:
         return
@@ -2555,12 +2606,12 @@ def _watchdog_check(container):
         if state["frozen_since"] is None:
             state["frozen_since"] = now
             print(f"[watchdog] {container}: freeze detected "
-                  f"(cur={cur_matches[-1]}), will restart in {WATCHDOG_GRACE}s if still stuck")
+                  f"(cur={cur_matches[-1]}), will restart in {grace}s if still stuck")
             return
 
         frozen_secs = now - state["frozen_since"]
-        if frozen_secs < WATCHDOG_GRACE:
-            print(f"[watchdog] {container}: still frozen ({frozen_secs:.0f}s / {WATCHDOG_GRACE}s grace)")
+        if frozen_secs < grace:
+            print(f"[watchdog] {container}: still frozen ({frozen_secs:.0f}s / {grace}s grace)")
             return
 
         # Grace period expired — restart
@@ -2592,6 +2643,14 @@ def _pool_nonce_watchdog_check():
     tracks in memory (typically after a large burst of payout transactions).
     The only fix is a pool restart, which re-reads the on-chain nonce from scratch.
     """
+    _cfg    = _load_watchdog_cfg()
+    if not _cfg.get("pool_watchdog_enabled", True):
+        with _pool_watchdog_lock:
+            _pool_watchdog_state["nonce_error_since"] = None
+        return
+    grace   = _cfg.get("pool_grace",   POOL_WATCHDOG_GRACE)
+    startup = _cfg.get("pool_startup", POOL_WATCHDOG_STARTUP)
+
     now = time.time()
 
     # Skip if pool restarted too recently (let it finish startup / nonce resync)
@@ -2603,7 +2662,7 @@ def _pool_nonce_watchdog_check():
             started_str = r.stdout.strip().split(".")[0] + "Z"
             started = datetime.fromisoformat(started_str.replace("Z", "+00:00"))
             uptime_secs = (datetime.now(timezone.utc) - started).total_seconds()
-            if uptime_secs < POOL_WATCHDOG_STARTUP:
+            if uptime_secs < startup:
                 return
     except Exception:
         return
@@ -2632,13 +2691,13 @@ def _pool_nonce_watchdog_check():
         if state["nonce_error_since"] is None:
             state["nonce_error_since"] = now
             print(f"[pool-watchdog] asic-pool: nonce-too-low detected, "
-                  f"will restart in {POOL_WATCHDOG_GRACE}s if still present")
+                  f"will restart in {grace}s if still present")
             return
 
         error_secs = now - state["nonce_error_since"]
-        if error_secs < POOL_WATCHDOG_GRACE:
+        if error_secs < grace:
             print(f"[pool-watchdog] asic-pool: nonce error persisting "
-                  f"({error_secs:.0f}s / {POOL_WATCHDOG_GRACE}s grace)")
+                  f"({error_secs:.0f}s / {grace}s grace)")
             return
 
         # Grace period expired — restart the pool
