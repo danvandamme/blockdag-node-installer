@@ -247,7 +247,7 @@ if not "!ADDR_CHECK!"=="OK" (
 REM -- Pool defaults (fee, difficulty, stratum port, password)
 REM    All can be changed after install via the dashboard Config window.
 set "POOL_FEE=2.0"
-set "POOL_DIFF=0.1"
+set "POOL_DIFF=0.5"
 set "POOL_PORT=3334"
 set "POOL_PASSWORD="
 
