@@ -82,6 +82,15 @@ WATCHDOG_CONTAINERS = ["bdag-miner-node-1", "bdag-miner-node-2"]
 
 _watchdog_lock  = threading.Lock()
 _watchdog_state = {}        # container -> {"frozen_since": float|None}
+
+# ── Pool nonce watchdog ───────────────────────────────────────────────────────
+POOL_WATCHDOG_INTERVAL = 60    # seconds between checks
+POOL_WATCHDOG_GRACE    = 180   # seconds of continuous nonce errors before restart
+POOL_WATCHDOG_STARTUP  = 120   # ignore if pool restarted < 2 min ago
+
+_pool_watchdog_lock  = threading.Lock()
+_pool_watchdog_state = {"nonce_error_since": None}
+
 _node_id_cache      = {}     # container_name -> node_id string
 _node_version_cache = {}     # container_name -> version string (cached from startup log)
 
@@ -2575,9 +2584,87 @@ def _watchdog_loop():
         time.sleep(WATCHDOG_INTERVAL)
 
 
+def _pool_nonce_watchdog_check():
+    """Restart asic-pool if nonce-too-low persists beyond POOL_WATCHDOG_GRACE seconds.
+
+    The error pattern is: nonce too low: address 0x..., tx: N state: M
+    It appears when the payout wallet's on-chain nonce diverges from what the pool
+    tracks in memory (typically after a large burst of payout transactions).
+    The only fix is a pool restart, which re-reads the on-chain nonce from scratch.
+    """
+    now = time.time()
+
+    # Skip if pool restarted too recently (let it finish startup / nonce resync)
+    try:
+        r = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.StartedAt}}", "asic-pool"],
+            capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            started_str = r.stdout.strip().split(".")[0] + "Z"
+            started = datetime.fromisoformat(started_str.replace("Z", "+00:00"))
+            uptime_secs = (datetime.now(timezone.utc) - started).total_seconds()
+            if uptime_secs < POOL_WATCHDOG_STARTUP:
+                return
+    except Exception:
+        return
+
+    # Pull last 3 minutes of pool logs
+    try:
+        r = subprocess.run(
+            ["docker", "logs", "--since", "3m", "asic-pool"],
+            capture_output=True, text=True, timeout=15)
+        logs = re.sub(r'\x1b\[[0-9;]*m|\[0m', '', r.stdout + r.stderr)
+    except Exception:
+        return
+
+    has_nonce_error = bool(re.search(r'nonce too low', logs, re.IGNORECASE))
+
+    with _pool_watchdog_lock:
+        state = _pool_watchdog_state
+
+        if not has_nonce_error:
+            if state["nonce_error_since"] is not None:
+                state["nonce_error_since"] = None
+                print("[pool-watchdog] asic-pool: nonce error cleared — healthy")
+            return
+
+        # Nonce error detected — start or continue grace timer
+        if state["nonce_error_since"] is None:
+            state["nonce_error_since"] = now
+            print(f"[pool-watchdog] asic-pool: nonce-too-low detected, "
+                  f"will restart in {POOL_WATCHDOG_GRACE}s if still present")
+            return
+
+        error_secs = now - state["nonce_error_since"]
+        if error_secs < POOL_WATCHDOG_GRACE:
+            print(f"[pool-watchdog] asic-pool: nonce error persisting "
+                  f"({error_secs:.0f}s / {POOL_WATCHDOG_GRACE}s grace)")
+            return
+
+        # Grace period expired — restart the pool
+        print(f"[pool-watchdog] asic-pool: nonce error for {error_secs:.0f}s — auto-restarting")
+        try:
+            subprocess.run(["docker", "restart", "asic-pool"], timeout=60)
+            print("[pool-watchdog] asic-pool: restarted OK")
+        except Exception as e:
+            print(f"[pool-watchdog] asic-pool: restart failed: {e}")
+        state["nonce_error_since"] = None
+
+
+def _pool_watchdog_loop():
+    time.sleep(30)  # stagger — start checking shortly after dashboard is up
+    while True:
+        try:
+            _pool_nonce_watchdog_check()
+        except Exception as e:
+            print(f"[pool-watchdog] loop error: {e}")
+        time.sleep(POOL_WATCHDOG_INTERVAL)
+
+
 if __name__ == "__main__":
-    threading.Thread(target=_alert_loop,    daemon=True).start()
-    threading.Thread(target=_watchdog_loop, daemon=True).start()
+    threading.Thread(target=_alert_loop,        daemon=True).start()
+    threading.Thread(target=_watchdog_loop,     daemon=True).start()
+    threading.Thread(target=_pool_watchdog_loop, daemon=True).start()
     print(f"BlockDAG Dashboard  ->  http://localhost:{PORT}")
     print("Press Ctrl+C to stop.\n")
     # Open the dashboard in the default browser after the server is bound and listening.
