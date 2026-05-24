@@ -31,7 +31,7 @@ services:
       NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
 
       WALLET_RPC_URL: http://bdag-miner-node-1:18545
-      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545
       PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
       POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
       POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
@@ -76,7 +76,7 @@ services:
       NODE_RPC_USER: ${NODE_RPC_USER:-test}
       NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
       WALLET_RPC_URL: http://bdag-miner-node-1:18545
-      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545
       PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
       POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
       POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
@@ -121,7 +121,7 @@ services:
       NODE_RPC_USER: ${NODE_RPC_USER:-test}
       NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
       WALLET_RPC_URL: http://bdag-miner-node-1:18545
-      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545
       PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
       POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
       POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
@@ -166,7 +166,7 @@ services:
       NODE_RPC_USER: ${NODE_RPC_USER:-test}
       NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
       WALLET_RPC_URL: http://bdag-miner-node-1:18545
-      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545
       PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
       POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
       POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
@@ -211,7 +211,7 @@ services:
       NODE_RPC_USER: ${NODE_RPC_USER:-test}
       NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
       WALLET_RPC_URL: http://bdag-miner-node-1:18545
-      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545
       PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
       POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
       POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
@@ -256,7 +256,7 @@ services:
       NODE_RPC_USER: ${NODE_RPC_USER:-test}
       NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
       WALLET_RPC_URL: http://bdag-miner-node-1:18545
-      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545
       PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
       POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
       POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
@@ -301,7 +301,7 @@ services:
       NODE_RPC_USER: ${NODE_RPC_USER:-test}
       NODE_RPC_PASS: ${NODE_RPC_PASS:-test}
       WALLET_RPC_URL: http://bdag-miner-node-1:18545
-      WALLET_RPC_URLS: http://bdag-miner-node-1:18545,http://bdag-miner-node-2:18545
+      WALLET_RPC_URLS: http://bdag-miner-node-1:18545
       PPLNS_N_WORK: ${PPLNS_N_WORK:-1000}
       POOL_BLOCK_MATURITY: ${POOL_BLOCK_MATURITY:-10}
       POOL_PAYOUT_MATURITY: ${POOL_PAYOUT_MATURITY:-50}
