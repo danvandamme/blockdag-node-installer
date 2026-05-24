@@ -17,6 +17,7 @@ import json, os, shutil, subprocess, urllib.request, re, threading, time, base64
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 PORT          = 8088
@@ -416,6 +417,57 @@ def _parse_block_finders(block_times):
     return finders
 
 
+# ── Per-worker block count cache ──────────────────────────────────────────────
+_blocks_per_worker_cache: dict = {"data": {}, "ts": 0.0}
+_BLOCKS_WORKER_CACHE_SECS = 300   # refresh every 5 minutes
+
+
+def _blocks_per_worker_from_logs() -> dict:
+    """
+    Return {worker_string: block_count} by matching pool-log submit events to
+    every block in the DB.  Worker string is 'wallet.workername' or bare wallet.
+
+    Results are cached for 5 minutes so the expensive log + DB scan only runs
+    once per refresh cycle.
+    """
+    now = time.time()
+    if now - _blocks_per_worker_cache["ts"] < _BLOCKS_WORKER_CACHE_SECS:
+        return _blocks_per_worker_cache["data"]
+
+    try:
+        r = subprocess.run(
+            ["docker", "exec", "pool-db", "psql",
+             "-U", "test", "-d", "pool", "-tA", "-F", "|", "-c",
+             "SELECT hash, created_at FROM blocks ORDER BY created_at"],
+            capture_output=True, text=True, timeout=15)
+        block_times = []
+        for ln in r.stdout.strip().splitlines():
+            parts = ln.split("|")
+            if len(parts) >= 2:
+                bh = parts[0].strip()
+                ts_raw = parts[1].strip()
+                ts_dt = None
+                for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+                    try:
+                        ts_dt = datetime.strptime(ts_raw, fmt)
+                        break
+                    except ValueError:
+                        pass
+                if ts_dt:
+                    block_times.append((bh, ts_dt))
+    except Exception:
+        return _blocks_per_worker_cache["data"]
+
+    finders = _parse_block_finders(block_times)   # {hash: worker_string}
+
+    counts: dict = {}
+    for worker in finders.values():
+        counts[worker] = counts.get(worker, 0) + 1
+
+    _blocks_per_worker_cache.update({"data": counts, "ts": now})
+    return counts
+
+
 def _env_read():
     """Read INSTALL_DIR/.env as an ordered {key: raw_value} dict (comments skipped)."""
     result = {}
@@ -779,8 +831,12 @@ class Handler(BaseHTTPRequestHandler):
             self._get_resources()
         elif self.path == "/nodeinfo":
             self._get_nodeinfo()
-        elif self.path == "/poolstats":
-            self._get_poolstats()
+        elif self.path.startswith("/poolstats"):
+            qs = parse_qs(urlparse(self.path).query)
+            wf = (qs.get("wallet") or [""])[0].strip().lower()
+            # Basic sanity: wallet must look like an EVM address (0x + 40 hex)
+            wf = wf if re.match(r'^0x[0-9a-f]{40}$', wf) else None
+            self._get_poolstats(wallet_filter=wf)
         elif self.path == "/minermetrics":
             self._get_minermetrics()
         elif self.path.startswith("/backup/schedule"):
@@ -919,7 +975,12 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json({"error": str(e)}, 502)
 
-    def _get_poolstats(self):
+    def _get_poolstats(self, wallet_filter=None):
+        """
+        wallet_filter: lowercase 0x-prefixed EVM address string, or None for
+        pool-wide totals.  When provided, block counts, rewards, and recent
+        blocks are filtered to that wallet's credits only.
+        """
         def psql(query):
             r = subprocess.run(
                 ["docker", "exec", "pool-db", "psql",
@@ -931,9 +992,20 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             # ── Block counts & rewards by status ─────────────────────────────
-            block_rows = psql(
-                "SELECT status, COUNT(*), COALESCE(SUM(reward),0) "
-                "FROM blocks GROUP BY status ORDER BY status")
+            if wallet_filter:
+                # Per-wallet: count distinct blocks where this address has a credit;
+                # sum the credit amounts (not block.reward which is the pool total).
+                block_rows = psql(
+                    "SELECT b.status, COUNT(DISTINCT b.hash), "
+                    "COALESCE(SUM(c.amount),0) "
+                    "FROM blocks b "
+                    "JOIN credits c ON c.block_hash = b.hash "
+                    f"WHERE LOWER(c.miner_address) = '{wallet_filter}' "
+                    "GROUP BY b.status ORDER BY b.status")
+            else:
+                block_rows = psql(
+                    "SELECT status, COUNT(*), COALESCE(SUM(reward),0) "
+                    "FROM blocks GROUP BY status ORDER BY status")
             blocks = {}
             total_reward = 0
             for row in block_rows:
@@ -988,13 +1060,23 @@ class Handler(BaseHTTPRequestHandler):
             active_miners = int(am[0][0]) if am else 0
 
             # ── 5 most recent blocks ──────────────────────────────────────────
-            rb = psql(
-                "SELECT b.hash, b.height, b.status, "
-                "to_char(b.created_at,'MM-DD HH24:MI'), "
-                "b.created_at, "
-                "(SELECT miner_address FROM credits "
-                " WHERE block_hash = b.hash LIMIT 1) "
-                "FROM blocks b ORDER BY b.created_at DESC LIMIT 5")
+            if wallet_filter:
+                rb = psql(
+                    "SELECT b.hash, b.height, b.status, "
+                    "to_char(b.created_at,'MM-DD HH24:MI'), "
+                    "b.created_at, c.miner_address "
+                    "FROM blocks b "
+                    "JOIN credits c ON c.block_hash = b.hash "
+                    f"WHERE LOWER(c.miner_address) = '{wallet_filter}' "
+                    "ORDER BY b.created_at DESC LIMIT 5")
+            else:
+                rb = psql(
+                    "SELECT b.hash, b.height, b.status, "
+                    "to_char(b.created_at,'MM-DD HH24:MI'), "
+                    "b.created_at, "
+                    "(SELECT miner_address FROM credits "
+                    " WHERE block_hash = b.hash LIMIT 1) "
+                    "FROM blocks b ORDER BY b.created_at DESC LIMIT 5")
 
             # Finder from pool logs (has wallet.workername) or fall back to credits address
             # r[4] is the raw psql TIMESTAMP string — parse it to datetime for comparison
@@ -1120,6 +1202,9 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+            # ── Per-worker block counts via pool-log matching (cached 5 min) ──
+            blocks_by_worker = _blocks_per_worker_from_logs()
+
             # ── Per-worker list from pool logs (shows real worker names + diff) ─
             miners_list = _parse_pool_workers()
             # Count distinct log-tracked workers per wallet so the DB fallback
@@ -1138,7 +1223,14 @@ class Handler(BaseHTTPRequestHandler):
                         w["hashrate_mhs"] = hashrate_by_addr.get(w["address"].lower(), 0)
                     # else: multiple workers, no recent log shares → can't split wallet
                     # total meaningfully, leave at 0 rather than show an inflated value.
-                w["blocks_found"] = blocks_by_addr.get(w["address"].lower(), 0)
+                # Per-worker block count: prefer log-matched data (wallet.workername or
+                # bare wallet), fall back to wallet total from credits table.
+                _waddr  = w["address"].lower()
+                _wname  = (w.get("worker") or "").strip()
+                _wkey   = f"{_waddr}.{_wname}" if _wname else _waddr
+                w["blocks_found"] = (blocks_by_worker.get(_wkey)
+                                     or blocks_by_worker.get(_waddr)
+                                     or blocks_by_addr.get(_waddr, 0))
 
             # ── Fall back to DB miners table if log parse returned nothing ──────
             if not miners_list:
@@ -1173,7 +1265,8 @@ class Handler(BaseHTTPRequestHandler):
                                 "accepted":     0,
                                 "rejected":     0,
                                 "hashrate_mhs": hashrate_by_addr.get(addr.lower(), 0),
-                                "blocks_found": blocks_by_addr.get(addr.lower(), 0),
+                                "blocks_found": (blocks_by_worker.get(addr.lower())
+                                                 or blocks_by_addr.get(addr.lower(), 0)),
                             })
                 except Exception:
                     pass
@@ -1200,7 +1293,12 @@ class Handler(BaseHTTPRequestHandler):
                     if rm["accepted"]:
                         match["accepted"] = rm["accepted"]
                 else:
-                    rm["blocks_found"] = blocks_by_addr.get(rm["address"].lower(), 0)
+                    _raddr = rm["address"].lower()
+                    _rname = (rm.get("worker") or "").strip()
+                    _rkey  = f"{_raddr}.{_rname}" if _rname else _raddr
+                    rm["blocks_found"] = (blocks_by_worker.get(_rkey)
+                                          or blocks_by_worker.get(_raddr)
+                                          or blocks_by_addr.get(_raddr, 0))
                     miners_list.append(rm)
 
             try:
