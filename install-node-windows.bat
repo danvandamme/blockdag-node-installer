@@ -17,7 +17,7 @@ REM ============================================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
-set "VERSION=DVD-2026.0524.1"
+set "VERSION=DVD-2026.0524.2"
 set "INSTALL_DIR=C:\blockdag node"
 
 set "POOL_IMAGE=bdag-release/asic-pool:local"
@@ -507,10 +507,7 @@ echo [Node] Stack started successfully.
 
 REM -- Firewall rule: dashboard (port 8088) accessible from LAN miners --
 echo [Node] Adding Windows Firewall rule for dashboard port 8088...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "Remove-NetFirewallRule -DisplayName 'BlockDAG Dashboard' -ErrorAction SilentlyContinue; ^
-     New-NetFirewallRule -DisplayName 'BlockDAG Dashboard' -Direction Inbound -Protocol TCP -LocalPort 8088 -Profile Private,Domain -Action Allow | Out-Null" ^
-    >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-NetFirewallRule -DisplayName 'BlockDAG Dashboard' -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName 'BlockDAG Dashboard' -Direction Inbound -Protocol TCP -LocalPort 8088 -Profile Private,Domain -Action Allow | Out-Null" >nul 2>&1
 echo [Node] Dashboard firewall rule set (LAN miners can now see their block counts).
 
 REM -- Firewall rule: allow inbound stratum connections on the pool port --
