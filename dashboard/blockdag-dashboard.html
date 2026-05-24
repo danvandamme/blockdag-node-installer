@@ -1548,11 +1548,12 @@ async function fetchPoolStats() {
       const bd = j.blocks_today ?? 0;
       const bw = j.blocks_week  ?? 0;
       const bm = j.blocks_month ?? 0;
-      set('p-blocks-periods',
+      const pEl = document.getElementById('p-blocks-periods');
+      if (pEl) pEl.innerHTML =
           `<span title="last hour">${bh.toLocaleString()}</span>` +
           ` / <span title="last 24h">${bd.toLocaleString()}</span>` +
           ` / <span title="last 7 days">${bw.toLocaleString()}</span>` +
-          ` / <span title="last 30 days">${bm.toLocaleString()}</span>`);
+          ` / <span title="last 30 days">${bm.toLocaleString()}</span>`;
     }
 
     if (j.round_secs != null) {
