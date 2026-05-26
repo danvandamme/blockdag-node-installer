@@ -531,7 +531,10 @@
   <p class="section-title"><i class="ti ti-wallet"></i> Wallet</p>
   <div class="row">
     <span class="row-label"><i class="ti ti-id"></i> Mining address</span>
-    <span class="wallet" id="w-addr">&mdash;</span>
+    <span style="display:flex;align-items:center;gap:6px;max-width:60%;min-width:0;">
+      <span class="wallet" id="w-addr" title="" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;">&mdash;</span>
+      <button id="w-addr-copy" onclick="copyWalletAddr()" title="Copy full address" style="padding:3px 7px;flex-shrink:0;display:none;"><i class="ti ti-copy"></i></button>
+    </span>
   </div>
   <div class="row">
     <span class="row-label"><i class="ti ti-coin"></i> Balance</span>
@@ -1478,6 +1481,19 @@ async function fetchMempool() {
   } catch(e) { /* non-critical */ }
 }
 
+function copyWalletAddr() {
+  const el   = document.getElementById('w-addr');
+  const addr = el ? el.title : '';
+  if (!addr) return;
+  navigator.clipboard.writeText(addr).then(() => {
+    const btn = document.getElementById('w-addr-copy');
+    if (btn) {
+      btn.innerHTML = '<i class="ti ti-check"></i>';
+      setTimeout(() => { btn.innerHTML = '<i class="ti ti-copy"></i>'; }, 1500);
+    }
+  }).catch(() => {});
+}
+
 async function fetchBalance() {
   // cfg-wallet is only populated after opening the config modal — fetch it
   // from the server on first call so the balance shows without user interaction.
@@ -1492,7 +1508,21 @@ async function fetchBalance() {
       }
     } catch(e) {}
   }
-  set('w-addr', wallet || '—');
+  { const addrEl = document.getElementById('w-addr');
+    const copyBtn = document.getElementById('w-addr-copy');
+    if (addrEl) {
+      if (wallet) {
+        const short = wallet.length > 22 ? wallet.slice(0, 10) + '…' + wallet.slice(-10) : wallet;
+        addrEl.textContent = short;
+        addrEl.title = wallet;
+        if (copyBtn) copyBtn.style.display = '';
+      } else {
+        addrEl.textContent = '—';
+        addrEl.title = '';
+        if (copyBtn) copyBtn.style.display = 'none';
+      }
+    }
+  }
   if (!IS_SERVER) { set('w-balance', 'Requires server'); set('m-balance', '?'); return; }
   if (!wallet) { set('m-balance', '?'); return; }
   try {
@@ -1637,12 +1667,16 @@ async function fetchPoolStats() {
       const arr = j.blocks_hourly;
       const el  = document.getElementById('p-blocks-hourly');
       if (el && Array.isArray(arr) && arr.length === 24) {
-        const max = Math.max(...arr, 1);
+        const max       = Math.max(...arr, 1);
+        const pad       = h => String(h).padStart(2, '0');
+        const localHour = new Date().getHours(); // browser local time
         el.innerHTML = arr.map((cnt, i) => {
-          const hAgo  = 23 - i;
-          const label = hAgo === 0 ? 'current hour' : hAgo + 'h ago';
-          const hPx   = cnt > 0 ? Math.max(Math.round(cnt / max * 32), 3) : 1;
-          const op    = cnt > 0 ? (0.4 + cnt / max * 0.6).toFixed(2) : '0.13';
+          const hFrom     = (localHour - (23 - i) + 24) % 24;
+          const hTo       = (hFrom + 1) % 24;
+          const isCurrent = i === 23;
+          const label     = `${pad(hFrom)}:00–${pad(hTo)}:00${isCurrent ? ' (current)' : ''}`;
+          const hPx       = cnt > 0 ? Math.max(Math.round(cnt / max * 32), 3) : 1;
+          const op        = cnt > 0 ? (0.4 + cnt / max * 0.6).toFixed(2) : '0.13';
           return `<div title="${cnt} block${cnt !== 1 ? 's' : ''} · ${label}" style="flex:1;height:${hPx}px;background:#4a9eff;border-radius:2px 2px 0 0;opacity:${op}"></div>`;
         }).join('');
       }

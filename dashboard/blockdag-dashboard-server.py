@@ -1198,30 +1198,39 @@ class Handler(BaseHTTPRequestHandler):
             blocks_week   = _count_blocks("7 days")
             blocks_month  = _count_blocks("30 days")
 
-            # Per-hour breakdown: 24 individual 1-hour slots.
-            # slot 0 = current partial hour, slot 23 = 23-24h ago.
-            # Reversed before returning so index 0 = oldest (left of chart).
+            # Per-hour breakdown: 24 clock-aligned 1-hour slots.
+            # Uses date_trunc('hour') so boundaries sit on the hour (e.g. 14:00–15:00),
+            # not on rolling 60-min windows from NOW().
+            # generate_series fills gaps so empty hours always return 0.
+            # Returns index 0 = oldest slot (left of chart), index 23 = current partial hour.
+            # Also returns blocks_hourly_start_h: the 0-23 hour-of-day of the oldest slot
+            # so the frontend can label each bar with the correct clock time.
             try:
                 if wallet_filter:
-                    bh_q = (f"SELECT floor(EXTRACT(EPOCH FROM (NOW() - b.created_at)) / 3600)::int AS slot, "
-                            f"COUNT(DISTINCT b.hash) AS cnt "
-                            f"FROM blocks b JOIN credits c ON c.block_hash = b.hash "
-                            f"WHERE LOWER(c.miner_address) = '{wallet_filter}' "
-                            f"AND b.created_at > NOW() - INTERVAL '24 hours' "
-                            f"GROUP BY slot")
+                    inner = (f"SELECT date_trunc('hour', b.created_at) AS hr, "
+                             f"COUNT(DISTINCT b.hash) AS cnt "
+                             f"FROM blocks b JOIN credits c ON c.block_hash = b.hash "
+                             f"WHERE LOWER(c.miner_address) = '{wallet_filter}' "
+                             f"AND b.created_at >= date_trunc('hour', NOW()) - INTERVAL '23 hours' "
+                             f"GROUP BY hr")
                 else:
-                    bh_q = (f"SELECT floor(EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600)::int AS slot, "
-                            f"COUNT(*) AS cnt "
-                            f"FROM blocks WHERE created_at > NOW() - INTERVAL '24 hours' "
-                            f"GROUP BY slot")
-                _hcounts = [0] * 24
-                for row in (psql(bh_q) or []):
-                    s = int(row[0])
-                    if 0 <= s < 24:
-                        _hcounts[s] = int(row[1])
-                blocks_hourly = list(reversed(_hcounts))
+                    inner = (f"SELECT date_trunc('hour', created_at) AS hr, COUNT(*) AS cnt "
+                             f"FROM blocks "
+                             f"WHERE created_at >= date_trunc('hour', NOW()) - INTERVAL '23 hours' "
+                             f"GROUP BY hr")
+                bh_q = (f"SELECT EXTRACT(HOUR FROM gs.h)::int AS hod, COALESCE(b.cnt, 0) AS cnt "
+                        f"FROM generate_series("
+                        f"  date_trunc('hour', NOW()) - INTERVAL '23 hours',"
+                        f"  date_trunc('hour', NOW()),"
+                        f"  INTERVAL '1 hour') AS gs(h) "
+                        f"LEFT JOIN ({inner}) b ON b.hr = gs.h "
+                        f"ORDER BY gs.h")
+                rows = psql(bh_q) or []
+                blocks_hourly       = [int(r[1]) for r in rows]
+                blocks_hourly_start_h = int(rows[0][0]) if rows else 0
             except Exception:
-                blocks_hourly = [0] * 24
+                blocks_hourly         = [0] * 24
+                blocks_hourly_start_h = 0
 
             # Round duration: seconds since last block
             round_secs = None
@@ -1394,7 +1403,8 @@ class Handler(BaseHTTPRequestHandler):
                 "blocks_today":    blocks_today,
                 "blocks_week":     blocks_week,
                 "blocks_month":    blocks_month,
-                "blocks_hourly":   blocks_hourly,
+                "blocks_hourly":         blocks_hourly,
+                "blocks_hourly_start_h": blocks_hourly_start_h,
                 "round_secs":      round_secs,
                 "hashrate_mhs":    hashrate_mhs,
                 "miners":          miners_list,
@@ -1735,11 +1745,20 @@ class Handler(BaseHTTPRequestHandler):
         try:
             r = subprocess.run(
                 ["powershell", "-NoProfile", "-Command",
-                 "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
+                 "Add-Type -AssemblyName System.Windows.Forms | Out-Null;"
                  "$dlg = New-Object System.Windows.Forms.FolderBrowserDialog;"
                  "$dlg.Description = 'Select backup folder';"
                  "$dlg.ShowNewFolderButton = $true;"
-                 "if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)"
+                 # Create a hidden top-most owner form so the dialog appears in front
+                 "$owner = New-Object System.Windows.Forms.Form;"
+                 "$owner.TopMost = $true;"
+                 "$owner.ShowInTaskbar = $false;"
+                 "$owner.WindowState = 'Minimized';"
+                 "$owner.Show();"
+                 "$owner.Hide();"
+                 "$result = $dlg.ShowDialog($owner);"
+                 "$owner.Dispose();"
+                 "if ($result -eq [System.Windows.Forms.DialogResult]::OK)"
                  "  { $dlg.SelectedPath } else { '::cancelled::' }"],
                 capture_output=True, text=True, timeout=120)
             out = r.stdout.strip()
