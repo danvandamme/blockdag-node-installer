@@ -17,7 +17,7 @@ REM ============================================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
-set "VERSION=DVD-2026.0524.2"
+set "VERSION=2026.0526.1"
 set "INSTALL_DIR=C:\blockdag node"
 
 set "POOL_IMAGE=bdag-release/asic-pool:local"
@@ -247,7 +247,7 @@ if not "!ADDR_CHECK!"=="OK" (
 REM -- Pool defaults (fee, difficulty, stratum port, password)
 REM    All can be changed after install via the dashboard Config window.
 set "POOL_FEE=2.0"
-set "POOL_DIFF=0.5"
+set "POOL_DIFF=1.0"
 set "POOL_PORT=3334"
 set "POOL_PASSWORD="
 
@@ -412,7 +412,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$lines = $lines -replace '^BDAG_MINER_POOL_PASSWORD=.*', 'BDAG_MINER_POOL_PASSWORD=%POOL_PASSWORD%';" ^
     "$lines = $lines -replace '^PG_URL=.*', 'PG_URL=postgres://test:test@pool-db:5432/pool';" ^
     "$lines = $lines -replace '^NODE_EXTERNAL_IP=.*', 'NODE_EXTERNAL_IP=%WRITE_EXTERNAL_IP%';" ^
-    "$lines += 'INSTALLER_VERSION=%VERSION%';" ^
+    "$lines = $lines -replace '^INSTALLER_VERSION=.*', 'INSTALLER_VERSION=%VERSION%';" ^
     "$lines | Set-Content $dst -Encoding UTF8"
 
 if errorlevel 1 ( echo [Node] ERROR: Failed to write .env & pause & exit /b 1 )

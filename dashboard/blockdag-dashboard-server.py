@@ -1190,10 +1190,38 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     return 0
 
-            blocks_hour  = _count_blocks("1 hour")
-            blocks_today = _count_blocks("24 hours")
-            blocks_week  = _count_blocks("7 days")
-            blocks_month = _count_blocks("30 days")
+            blocks_hour   = _count_blocks("1 hour")
+            blocks_2h     = _count_blocks("2 hours")
+            blocks_6h     = _count_blocks("6 hours")
+            blocks_12h    = _count_blocks("12 hours")
+            blocks_today  = _count_blocks("24 hours")
+            blocks_week   = _count_blocks("7 days")
+            blocks_month  = _count_blocks("30 days")
+
+            # Per-hour breakdown: 24 individual 1-hour slots.
+            # slot 0 = current partial hour, slot 23 = 23-24h ago.
+            # Reversed before returning so index 0 = oldest (left of chart).
+            try:
+                if wallet_filter:
+                    bh_q = (f"SELECT floor(EXTRACT(EPOCH FROM (NOW() - b.created_at)) / 3600)::int AS slot, "
+                            f"COUNT(DISTINCT b.hash) AS cnt "
+                            f"FROM blocks b JOIN credits c ON c.block_hash = b.hash "
+                            f"WHERE LOWER(c.miner_address) = '{wallet_filter}' "
+                            f"AND b.created_at > NOW() - INTERVAL '24 hours' "
+                            f"GROUP BY slot")
+                else:
+                    bh_q = (f"SELECT floor(EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600)::int AS slot, "
+                            f"COUNT(*) AS cnt "
+                            f"FROM blocks WHERE created_at > NOW() - INTERVAL '24 hours' "
+                            f"GROUP BY slot")
+                _hcounts = [0] * 24
+                for row in (psql(bh_q) or []):
+                    s = int(row[0])
+                    if 0 <= s < 24:
+                        _hcounts[s] = int(row[1])
+                blocks_hourly = list(reversed(_hcounts))
+            except Exception:
+                blocks_hourly = [0] * 24
 
             # Round duration: seconds since last block
             round_secs = None
@@ -1360,9 +1388,13 @@ class Handler(BaseHTTPRequestHandler):
                 "shares_accepted": shares_accepted,
                 "shares_rejected": shares_rejected,
                 "blocks_hour":     blocks_hour,
+                "blocks_2h":       blocks_2h,
+                "blocks_6h":       blocks_6h,
+                "blocks_12h":      blocks_12h,
                 "blocks_today":    blocks_today,
                 "blocks_week":     blocks_week,
                 "blocks_month":    blocks_month,
+                "blocks_hourly":   blocks_hourly,
                 "round_secs":      round_secs,
                 "hashrate_mhs":    hashrate_mhs,
                 "miners":          miners_list,
@@ -1462,6 +1494,32 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 net_io[c] = None
         result["net_io"] = net_io
+
+        # Host network speed — physical NIC bytes/sec via WMI perf counters.
+        # Win32_PerfFormattedData_Tcpip_NetworkInterface returns kernel-maintained
+        # rate counters instantly (no sampling delay).  Filter out loopback,
+        # Docker bridge (vEthernet), tunnels, and virtual miniports so only real
+        # physical NICs (Ethernet / Wi-Fi) contribute to the total.
+        try:
+            ps_cmd = (
+                "$nics = Get-CimInstance Win32_PerfFormattedData_Tcpip_NetworkInterface "
+                "-ErrorAction SilentlyContinue | Where-Object { "
+                "$_.Name -notmatch 'Loopback|Teredo|isatap|vEthernet|6to4|Miniport' }; "
+                "$rx = ($nics | Measure-Object BytesReceivedPerSec -Sum).Sum; "
+                "$tx = ($nics | Measure-Object BytesSentPerSec -Sum).Sum; "
+                "\"$rx,$tx\""
+            )
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                capture_output=True, text=True, timeout=8)
+            if r.returncode == 0 and "," in r.stdout.strip():
+                rx_s, tx_s = r.stdout.strip().split(",", 1)
+                result["net_host_rx_bps"] = int(float(rx_s.strip()))
+                result["net_host_tx_bps"] = int(float(tx_s.strip()))
+            else:
+                result["net_host_rx_bps"] = result["net_host_tx_bps"] = None
+        except Exception:
+            result["net_host_rx_bps"] = result["net_host_tx_bps"] = None
 
         # Local IP address
         try:

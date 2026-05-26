@@ -375,8 +375,12 @@
       <span class="row-value" id="p-shares">&mdash;</span>
     </div>
     <div class="row">
-      <span class="row-label"><i class="ti ti-calendar-stats"></i> Blocks (1h / 24h / 7d / 30d)</span>
+      <span class="row-label"><i class="ti ti-calendar-stats"></i> Blocks (1h / 2h / 6h / 12h / 24h / 7d / 30d)</span>
       <span class="row-value" id="p-blocks-periods">&mdash;</span>
+    </div>
+    <div class="row" style="align-items:flex-end; padding-bottom:7px;">
+      <span class="row-label" style="flex-shrink:0; white-space:nowrap;"><i class="ti ti-chart-bar"></i> Blocks / hour (24h)</span>
+      <div id="p-blocks-hourly" style="display:flex; align-items:flex-end; gap:2px; height:36px; flex:1; min-width:0; margin-left:12px;"></div>
     </div>
     <div class="row">
       <span class="row-label"><i class="ti ti-clock"></i> Round duration</span>
@@ -497,6 +501,10 @@
   <div class="row">
     <span class="row-label"><i class="ti ti-network"></i> pool net I/O</span>
     <span class="row-value" id="r-net-pool">&mdash;</span>
+  </div>
+  <div class="row">
+    <span class="row-label"><i class="ti ti-wifi"></i> Host network speed</span>
+    <span class="row-value" id="r-net-host">&mdash;</span>
   </div>
   <div class="row">
     <span class="row-label"><i class="ti ti-device-floppy"></i> Backup drive free</span>
@@ -1535,6 +1543,19 @@ async function fetchResources() {
     set('r-net-node2', j.net_io?.['bdag-miner-node-2'] ?? '?');
     set('r-net-pool',  j.net_io?.['asic-pool']         ?? '?');
 
+    // Host network speed (physical NIC, live bytes/sec)
+    {
+      const rx = j.net_host_rx_bps;
+      const tx = j.net_host_tx_bps;
+      const fmtBps = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB/s'
+                        : b >= 1024    ? Math.round(b / 1024)      + ' KB/s'
+                        :                b                          + ' B/s';
+      const el = document.getElementById('r-net-host');
+      if (el) el.textContent = (rx != null && tx != null)
+          ? '↓ ' + fmtBps(rx) + '  ↑ ' + fmtBps(tx)
+          : '?';
+    }
+
     // Backup drive free space
     const bkEl = document.getElementById('r-backup-disk');
     if (bkEl) {
@@ -1594,16 +1615,37 @@ async function fetchPoolStats() {
     }
 
     {
-      const bh = j.blocks_hour  ?? 0;
-      const bd = j.blocks_today ?? 0;
-      const bw = j.blocks_week  ?? 0;
-      const bm = j.blocks_month ?? 0;
+      const bh  = j.blocks_hour  ?? 0;
+      const b2h = j.blocks_2h    ?? 0;
+      const b6h = j.blocks_6h    ?? 0;
+      const b12 = j.blocks_12h   ?? 0;
+      const bd  = j.blocks_today ?? 0;
+      const bw  = j.blocks_week  ?? 0;
+      const bm  = j.blocks_month ?? 0;
       const pEl = document.getElementById('p-blocks-periods');
       if (pEl) pEl.innerHTML =
           `<span title="last hour">${bh.toLocaleString()}</span>` +
+          ` / <span title="last 2 hours">${b2h.toLocaleString()}</span>` +
+          ` / <span title="last 6 hours">${b6h.toLocaleString()}</span>` +
+          ` / <span title="last 12 hours">${b12.toLocaleString()}</span>` +
           ` / <span title="last 24h">${bd.toLocaleString()}</span>` +
           ` / <span title="last 7 days">${bw.toLocaleString()}</span>` +
           ` / <span title="last 30 days">${bm.toLocaleString()}</span>`;
+    }
+
+    {
+      const arr = j.blocks_hourly;
+      const el  = document.getElementById('p-blocks-hourly');
+      if (el && Array.isArray(arr) && arr.length === 24) {
+        const max = Math.max(...arr, 1);
+        el.innerHTML = arr.map((cnt, i) => {
+          const hAgo  = 23 - i;
+          const label = hAgo === 0 ? 'current hour' : hAgo + 'h ago';
+          const hPx   = cnt > 0 ? Math.max(Math.round(cnt / max * 32), 3) : 1;
+          const op    = cnt > 0 ? (0.4 + cnt / max * 0.6).toFixed(2) : '0.13';
+          return `<div title="${cnt} block${cnt !== 1 ? 's' : ''} · ${label}" style="flex:1;height:${hPx}px;background:#4a9eff;border-radius:2px 2px 0 0;opacity:${op}"></div>`;
+        }).join('');
+      }
     }
 
     if (j.round_secs != null) {
