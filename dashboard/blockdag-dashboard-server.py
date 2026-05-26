@@ -19,18 +19,31 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-# ── Suppress CMD flash on Windows ─────────────────────────────────────────────
-# Every subprocess.run / Popen call would briefly pop a CMD window on Windows.
-# Monkey-patch both once here so no individual call site needs changing.
+# ── Suppress CMD flash + taskbar icon on Windows ──────────────────────────────
+# subprocess.run/Popen without flags briefly flashes a CMD window AND shows a
+# taskbar button for each docker call.  Two layers are needed:
+#   CREATE_NO_WINDOW  — tells Windows not to allocate a console for the process
+#   STARTUPINFO/SW_HIDE — tells the process not to show its initial window
 # Calls that already set creationflags (e.g. _restart_server DETACHED_PROCESS)
-# are left untouched because the check is "not in kwargs".
+# are left untouched because setdefault only writes missing keys.
+# The shell=True log-popup Popen uses `start` which opens its own visible
+# window independently — not affected by these flags on the parent cmd.exe.
 _NO_WIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 if _NO_WIN:
+    def _si():
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = 0  # SW_HIDE
+        return si
     _orig_run, _orig_popen = subprocess.run, subprocess.Popen
     def _run_no_win(*a, **kw):
-        kw.setdefault('creationflags', _NO_WIN); return _orig_run(*a, **kw)
+        kw.setdefault('creationflags', _NO_WIN)
+        kw.setdefault('startupinfo', _si())
+        return _orig_run(*a, **kw)
     def _popen_no_win(*a, **kw):
-        kw.setdefault('creationflags', _NO_WIN); return _orig_popen(*a, **kw)
+        kw.setdefault('creationflags', _NO_WIN)
+        kw.setdefault('startupinfo', _si())
+        return _orig_popen(*a, **kw)
     subprocess.run, subprocess.Popen = _run_no_win, _popen_no_win
 
 # ── Configuration ─────────────────────────────────────────────────────────────
