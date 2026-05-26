@@ -43,6 +43,20 @@ function Handle($ctx) {
         $resp.StatusCode = 200; $resp.Close(); return
     }
 
+    # GET /logo.ico — serve dashboard logo
+    if ($method -eq "GET" -and $path -eq "/logo.ico") {
+        $logoPath = Join-Path $PSScriptRoot "logo.ico"
+        if (Test-Path $logoPath) {
+            $fileBytes = [System.IO.File]::ReadAllBytes($logoPath)
+            $resp.StatusCode  = 200
+            $resp.ContentType = "image/x-icon"
+            $resp.Headers.Add("Cache-Control", "public, max-age=86400")
+            $resp.ContentLength64 = $fileBytes.Length
+            $resp.OutputStream.Write($fileBytes, 0, $fileBytes.Length)
+        } else { $resp.StatusCode = 404 }
+        $resp.Close(); return
+    }
+
     # GET / — serve dashboard HTML
     if ($method -eq "GET" -and $path -in "/","/index.html") {
         if (Test-Path $DASH_FILE) {
