@@ -19,6 +19,20 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
+# ── Suppress CMD flash on Windows ─────────────────────────────────────────────
+# Every subprocess.run / Popen call would briefly pop a CMD window on Windows.
+# Monkey-patch both once here so no individual call site needs changing.
+# Calls that already set creationflags (e.g. _restart_server DETACHED_PROCESS)
+# are left untouched because the check is "not in kwargs".
+_NO_WIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+if _NO_WIN:
+    _orig_run, _orig_popen = subprocess.run, subprocess.Popen
+    def _run_no_win(*a, **kw):
+        kw.setdefault('creationflags', _NO_WIN); return _orig_run(*a, **kw)
+    def _popen_no_win(*a, **kw):
+        kw.setdefault('creationflags', _NO_WIN); return _orig_popen(*a, **kw)
+    subprocess.run, subprocess.Popen = _run_no_win, _popen_no_win
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 PORT          = 8088
 RPC_URL       = "http://localhost:38131"
@@ -2881,7 +2895,4 @@ if __name__ == "__main__":
     threading.Thread(target=_pool_watchdog_loop, daemon=True).start()
     print(f"BlockDAG Dashboard  ->  http://localhost:{PORT}")
     print("Press Ctrl+C to stop.\n")
-    # Open the dashboard in the default browser after the server is bound and listening.
-    # 1.5s delay gives the HTTP server time to start accepting connections.
-    threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     ThreadingHTTPServer(("", PORT), Handler).serve_forever()
