@@ -17,7 +17,7 @@ REM ============================================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
-set "VERSION=DVD-2026.0526.2"
+set "VERSION=DVD-2026.0526.3"
 set "INSTALL_DIR=C:\blockdag node"
 
 set "POOL_IMAGE=bdag-release/asic-pool:local"

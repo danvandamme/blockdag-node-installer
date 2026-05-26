@@ -144,6 +144,7 @@
     </div>
     <button onclick="manualRefresh()"><i class="ti ti-refresh"></i> Refresh</button>
     <button onclick="openConfigModal()" title="Configuration"><i class="ti ti-settings"></i> Config</button>
+    <button onclick="openUpdateModal()" title="Check for software updates" id="btn-update" style="color:#10b981;border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.08);"><i class="ti ti-arrow-up"></i> Update</button>
     <button onclick="toggleDark()" id="dark-btn" title="Toggle dark mode"><i class="ti ti-moon" id="dark-icon"></i></button>
   </div>
 </div>
@@ -3356,5 +3357,131 @@ setInterval(updateUptime, 1000);
     <div id="cfg-status" class="ctrl-status" style="margin-top:10px;"></div>
   </div>
 </div>
+
+<!-- -- Update Modal ---------------------------------------------------------- -->
+<div id="upd-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeUpdateModal()">
+  <div style="background:var(--bg-card);border-radius:12px;padding:28px;width:min(420px,95vw);box-shadow:0 8px 32px rgba(0,0,0,0.25);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <span style="font-size:16px;font-weight:600;"><i class="ti ti-arrow-up"></i> Software Update</span>
+      <button onclick="closeUpdateModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);">&#x2715;</button>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;">
+        <span style="color:var(--text-muted);">Current version</span>
+        <span id="upd-current" style="font-weight:500;">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:10px 14px;font-size:13px;">
+        <span style="color:var(--text-muted);">Latest version</span>
+        <span id="upd-latest" style="font-weight:500;">Checking…</span>
+      </div>
+    </div>
+    <div id="upd-status" style="padding:10px 14px;border-radius:8px;font-size:12px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.18);color:var(--text-muted);margin-bottom:14px;min-height:38px;white-space:pre-line;word-break:break-word;">Fetching version info…</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn-blue" id="upd-btn-apply" onclick="applyUpdate()" style="display:none;flex:1;min-width:120px;"><i class="ti ti-download"></i> Apply Update</button>
+      <button id="upd-btn-restart" onclick="restartNodeServer()" style="display:none;flex:1;min-width:140px;background:rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.35);color:#f59e0b;"><i class="ti ti-refresh"></i> Restart Server</button>
+      <button onclick="closeUpdateModal()" style="flex:1;min-width:80px;">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// -- Update Modal ------------------------------------------------------------
+async function openUpdateModal() {
+  document.getElementById('upd-current').textContent = '—';
+  document.getElementById('upd-latest').textContent = 'Checking…';
+  document.getElementById('upd-latest').style.color = '';
+  document.getElementById('upd-status').textContent = 'Fetching version info…';
+  document.getElementById('upd-status').style.cssText = 'padding:10px 14px;border-radius:8px;font-size:12px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.18);color:var(--text-muted);margin-bottom:14px;min-height:38px;white-space:pre-line;word-break:break-word;';
+  document.getElementById('upd-btn-apply').style.display = 'none';
+  document.getElementById('upd-btn-restart').style.display = 'none';
+  document.getElementById('upd-modal-overlay').style.display = 'flex';
+  const btn = document.getElementById('btn-update');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  try {
+    const r = await fetch('/update-check', { signal: AbortSignal.timeout(10000) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    document.getElementById('upd-current').textContent = d.current || '—';
+    const latEl = document.getElementById('upd-latest');
+    latEl.textContent = d.latest || '—';
+    if (d.up_to_date) {
+      latEl.style.color = 'var(--text-muted)';
+      _updStatus('✓ You are on the latest version.', 'ok');
+    } else {
+      latEl.style.color = '#10b981';
+      _updStatus(`New version available: ${d.current} → ${d.latest}`, '');
+      document.getElementById('upd-btn-apply').style.display = '';
+    }
+  } catch(e) {
+    _updStatus(`Error: ${e.message}`, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  }
+}
+function closeUpdateModal() { document.getElementById('upd-modal-overlay').style.display = 'none'; }
+
+function _updStatus(msg, type) {
+  const el = document.getElementById('upd-status');
+  el.textContent = msg;
+  const base = 'padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;min-height:38px;white-space:pre-line;word-break:break-word;';
+  if (type === 'ok')  el.style.cssText = base + 'background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);color:#10b981;';
+  else if (type === 'err') el.style.cssText = base + 'background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);color:#ef4444;';
+  else                el.style.cssText = base + 'background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.18);color:var(--text-muted);';
+}
+
+async function applyUpdate() {
+  const btn = document.getElementById('upd-btn-apply');
+  btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Downloading…';
+  _updStatus('Downloading update…', '');
+  try {
+    const r = await fetch('/update', { method: 'POST', signal: AbortSignal.timeout(120000) });
+    const d = await r.json();
+    if (!d.ok && d.error) throw new Error(d.error);
+    if (d.status === 'up_to_date') {
+      _updStatus('✓ Already on the latest version.', 'ok');
+    } else {
+      let msg = `✓ Updated: ${d.from} → ${d.to}`;
+      if (d.errors) msg += `\n⚠ Some files failed: ${d.errors}`;
+      _updStatus(msg, d.errors ? '' : 'ok');
+      document.getElementById('upd-current').textContent = d.to;
+      document.getElementById('upd-btn-apply').style.display = 'none';
+      if (d.restart_required) {
+        document.getElementById('upd-btn-restart').style.display = '';
+        _updStatus(msg + '\nServer restart required to apply new server version.', d.errors ? '' : 'ok');
+      }
+    }
+  } catch(e) {
+    _updStatus(`Update failed: ${e.message}`, 'err');
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-download"></i> Apply Update';
+  }
+}
+
+async function restartNodeServer() {
+  const btn = document.getElementById('upd-btn-restart');
+  btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Restarting…';
+  _updStatus('Restarting server…', '');
+  try { await fetch('/restart-server', { method: 'POST', signal: AbortSignal.timeout(5000) }); } catch(_) {}
+  _updStatus('Waiting for server to restart…', '');
+  let attempts = 0;
+  const poll = setInterval(async () => {
+    attempts++;
+    try {
+      const r = await fetch('/containers', { signal: AbortSignal.timeout(2000) });
+      if (r.ok) {
+        clearInterval(poll);
+        _updStatus('✓ Server restarted successfully.', 'ok');
+        document.getElementById('upd-btn-restart').style.display = 'none';
+        btn.disabled = false; btn.innerHTML = '<i class="ti ti-refresh"></i> Restart Server';
+      }
+    } catch(_) {}
+    if (attempts > 30) {
+      clearInterval(poll);
+      _updStatus('Server did not respond in 30s — check manually.', 'err');
+      btn.disabled = false; btn.innerHTML = '<i class="ti ti-refresh"></i> Restart Server';
+    }
+  }, 1000);
+}
+</script>
 </body>
 </html>

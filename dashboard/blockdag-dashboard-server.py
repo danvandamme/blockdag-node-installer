@@ -898,6 +898,8 @@ class Handler(BaseHTTPRequestHandler):
             self._open_logs_popup()
         elif self.path.startswith("/logs"):
             self._get_logs()
+        elif self.path == "/update-check":
+            self._update_check()
         else:
             self.send_error(404)
 
@@ -932,6 +934,8 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/maintenance/config": self._set_maintenance_config()
         elif p == "/watchdog/config":  self._save_watchdog_config()
         elif p == "/env/config":       self._save_env_config()
+        elif p == "/update":           self._do_update()
+        elif p == "/restart-server":   self._restart_server()
         else:                          self.send_error(404)
 
     def _proxy_rpc(self):
@@ -1847,6 +1851,80 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             result["installer_version"] = None
         self._json(result)
+
+    # ── Software update ───────────────────────────────────────────────────────
+
+    def _update_check(self):
+        GH_VER = "https://raw.githubusercontent.com/danvandamme/blockdag-node-installer/main/VERSION"
+        try:
+            with urllib.request.urlopen(GH_VER, timeout=8) as r:
+                latest = r.read().decode(errors="replace").strip()
+            current = (_env_read().get("INSTALLER_VERSION") or "unknown")
+            self._json({"current": current, "latest": latest, "up_to_date": current == latest})
+        except Exception as e:
+            self._json({"error": str(e)}, 500)
+
+    def _do_update(self):
+        GH_BASE  = "https://raw.githubusercontent.com/danvandamme/blockdag-node-installer/main"
+        DASH_DIR = Path(__file__).parent
+        try:
+            with urllib.request.urlopen(f"{GH_BASE}/VERSION", timeout=10) as r:
+                latest = r.read().decode(errors="replace").strip()
+            current = (_env_read().get("INSTALLER_VERSION") or "unknown")
+            if current == latest:
+                self._json({"ok": True, "status": "up_to_date", "version": current})
+                return
+            downloads = [
+                ("dashboard/blockdag-dashboard.html",       DASH_DIR / "blockdag-dashboard.html"),
+                ("dashboard/blockdag-dashboard-server.py",  DASH_DIR / "blockdag-dashboard-server.py.new"),
+            ]
+            errors = []
+            for src, dst in downloads:
+                try:
+                    with urllib.request.urlopen(f"{GH_BASE}/{src}", timeout=60) as r:
+                        data = r.read()
+                    dst.write_bytes(data)
+                    print(f"[Update] Downloaded {src}")
+                except Exception as e:
+                    errors.append(f"{src}: {e}")
+                    print(f"[Update] Failed {src}: {e}")
+            try:
+                _env_write_keys({"INSTALLER_VERSION": latest})
+            except Exception as e:
+                errors.append(f".env: {e}")
+            has_ctrl = (DASH_DIR / "blockdag-dashboard-server.py.new").exists()
+            print(f"[Update] Applied: {current} -> {latest}")
+            self._json({
+                "ok": True, "status": "updated",
+                "from": current, "to": latest,
+                "restart_required": has_ctrl,
+                "errors": "; ".join(errors) if errors else None,
+            })
+        except Exception as e:
+            self._json({"error": str(e)}, 500)
+
+    def _restart_server(self):
+        import sys as _sys, os as _os, shutil as _shutil, subprocess as _sub, time as _time
+        self._json({"ok": True})
+        DASH_DIR = Path(__file__).parent
+        pending  = DASH_DIR / "blockdag-dashboard-server.py.new"
+        script   = Path(__file__)
+        if pending.exists():
+            try:
+                _shutil.move(str(pending), str(script))
+                print("[Update] Pending server update applied.")
+            except Exception as e:
+                print(f"[Update] Warning: could not apply pending update: {e}")
+        _time.sleep(0.4)
+        try:
+            _sub.Popen(
+                [_sys.executable, str(script)],
+                creationflags=0x00000208,   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                close_fds=True,
+            )
+        except Exception as e:
+            print(f"[Update] Could not spawn new server: {e}")
+        _os._exit(0)
 
     def _node_syncstate(self, container, peer_max_height=None):
         """Return sync state for a node by parsing its docker logs."""
