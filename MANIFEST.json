@@ -1,26 +1,13 @@
 {
   "package_name": "blockdag-pool-release-20260510-132438",
   "created_at_local": "2026-05-10T13:45:00+02:00",
-  "host": "jeremy mining host",
   "purpose": "Beginner-friendly BlockDAG ASIC pool installer for Debian/Ubuntu hosts on linux/amd64 and linux/arm64.",
   "runtime_topology": {
     "pool": "single stratum pool",
     "backend_nodes": 2,
     "database": "postgres:15-alpine",
     "rpc_failover": "haproxy:2.9-alpine",
-    "dashboard": "local Python dashboard/watchdog installed by ops/install-dashboard.sh"
-  },
-  "source_refs": {
-    "pool": {
-      "repo": "/home/jeremy/blockdag-source/pool",
-      "branch": "feature/pool-authorize-current-job-resend",
-      "commit": "cb1ae7c123f1d47d9eb5d89fed2c6813040599ee"
-    },
-    "node": {
-      "repo": "/home/jeremy/blockdag-source/blockdag-corechain-reward-extra-clean",
-      "branch": "feature/corechain-reward-extra-consensus-validation",
-      "commit": "4aa9d36d026564316e13a723bd621753528ba0f7"
-    }
+    "dashboard": "local Python dashboard/watchdog"
   },
   "docker_images": {
     "linux_amd64": {
@@ -54,8 +41,6 @@
     "archive": "chain-data/chain-data-seed.zip",
     "sha256": "5bed877ca2fa8661a75c209fc24c2de56c346140b9a51d9b398c5ba56ea8959d",
     "size_bytes": 5822739890,
-    "source": "/home/jeremy/blockdag-asic-pool/data-restore/latest-hourly",
-    "source_resolved": "/home/jeremy/blockdag-asic-pool/data-restore/hourly/bdag-node2-hourly-20260509T230137Z",
     "notes": "One chain seed is unpacked once and copied to both backend node data directories during install."
   },
   "safety_notes": [
