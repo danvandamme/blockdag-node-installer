@@ -282,6 +282,9 @@ _POOL_SUPPRESSED_RE     = re.compile(r"suppressedDiff=([0-9.]+)")
 _POOL_SUPPRESSED_CNT_RE = re.compile(r"\bsuppressed=(\d+)\b")
 _POOL_SUBMIT_RE  = re.compile(r"submit from worker=([^\s]+)")
 _POOL_ANSI_RE    = re.compile(r"\x1b\[[0-9;]*m")
+_POOL_VARDIFF_RE = re.compile(
+    r"\[vardiff DEBUG\]\s+(?:hold|increase|decrease) pdiff ([0-9.]+) \(shares=(\d+) in (\d+)s"
+)
 
 
 def _parse_pool_workers():
@@ -299,12 +302,24 @@ def _parse_pool_workers():
     constant share rate (~0.33 shares/sec).  A miner doing 5× the work gets
     5× the difficulty.  So: hashrate_i ∝ difficulty_i.
 
-    Formula:
-      actual_shares_10m  = sum(1 + suppressed_count) for all logged events
-                           in the 10-min window (counts every real share
-                           including suppressed batches)
-      share_rate_per_port = actual_shares_10m / n_active_ports / 600s
+    Formula (preferred — VARDIFF direct measurement)
+    -------------------------------------------------
+    The pool logs per-connection share performance every 60 s:
+      [vardiff DEBUG] hold pdiff X (shares=N in Ys, ratio=R, ...)
+    These directly measure how fast each connection is finding shares.
+      share_rate_per_port = sum(shares) / sum(period)  [from VARDIFF lines]
       hashrate_per_port   = difficulty_i × share_rate_per_port
+
+    Ports are matched by their pdiff value (set by PUSHDIF; the same float
+    the pool tracks internally for vardiff).
+
+    Fallback formula (when no VARDIFF data for a port)
+    ---------------------------------------------------
+    If no VARDIFF line exists for a given port's pdiff value, fall back to
+    the share-count estimate:
+      actual_shares_10m  = sum(1 + suppressed_count) for all logged events
+                           in the 10-min window
+      share_rate_per_port = actual_shares_10m / n_active_ports / 600s
 
     Why NOT use (acceptedDiff + suppressedDiff) / time
     ---------------------------------------------------
@@ -312,7 +327,6 @@ def _parse_pool_workers():
     during vardiff adjustment periods.  Because difficulty is rising, the
     suppressed shares accumulate at higher-and-higher difficulty values,
     inflating the apparent total by ~10× vs the stable PUSHDIF difficulty.
-    The actual-share-count approach avoids this inflation entirely.
 
     Three-pass strategy
     -------------------
@@ -324,6 +338,8 @@ def _parse_pool_workers():
                      ports whose auth event scrolled past the --tail window
       valid share  → count actual shares (1 + suppressed_count) in 10-min
                      window; count accepted-event total for display
+      vardiff DEBUG → accumulate (shares, period) per pdiff value in 10-min
+                      window for direct share-rate measurement
     Pass 2 — compute per-port hashrate and filter to active ports:
       active ports  = last PUSHDIF within 5 min of log_now
     """
@@ -338,6 +354,7 @@ def _parse_pool_workers():
     workers             = {}   # (ip, port) → worker dict
     wallet_shares_10m   = {}   # wallet_str → actual share count in 10-min window (incl. suppressed)
     wallet_shares_total = {}   # wallet_str → total accepted-event count (all time, for display)
+    vardiff_by_pdiff    = {}   # pdiff_float → [shares_sum, period_sum] from vardiff DEBUG lines
 
     # ── Pre-pass: find the latest timestamp in the log ────────────────────────
     # Must be done before the main scan so ten_min_ago/five_min_ago are fixed
@@ -431,11 +448,25 @@ def _parse_pool_workers():
             wallet = share.group(2)   # always the bare wallet address
             # Total accepted events (all time) — shown in the Shares column
             wallet_shares_total[wallet] = wallet_shares_total.get(wallet, 0) + 1
-            # Actual share count including suppressed — used for hashrate
+            # Actual share count including suppressed — used for hashrate fallback
             if ts_dt and ts_dt >= ten_min_ago:
                 cnt_m  = _POOL_SUPPRESSED_CNT_RE.search(line)
                 actual = (int(cnt_m.group(1)) + 1) if cnt_m else 1
                 wallet_shares_10m[wallet] = wallet_shares_10m.get(wallet, 0) + actual
+            continue
+
+        vd_m = _POOL_VARDIFF_RE.search(line)
+        if vd_m and ts_dt and ts_dt >= ten_min_ago:
+            # Accumulate per-pdiff share measurements for direct hashrate calculation.
+            # The pool emits these every 60 s per connection; pdiff matches the
+            # difficulty sent via PUSHDIF so we can map to a specific port.
+            pdiff  = float(vd_m.group(1))
+            shares = int(vd_m.group(2))
+            period = int(vd_m.group(3))
+            if pdiff not in vardiff_by_pdiff:
+                vardiff_by_pdiff[pdiff] = [0, 0]
+            vardiff_by_pdiff[pdiff][0] += shares
+            vardiff_by_pdiff[pdiff][1] += period
 
     # ── Pass 2: compute per-port hashrate and filter to active ports ──────────
     # Only ports with a PUSHDIF in the last 5 min of log time are "active".
@@ -454,12 +485,20 @@ def _parse_pool_workers():
         n             = len(ports)
         actual_10m    = wallet_shares_10m.get(wallet, 0)
         total_acc     = wallet_shares_total.get(wallet, 0)
-        # share_rate_per_port: actual shares per second assigned equally to each port
-        share_rate    = actual_10m / n / 600 if actual_10m > 0 else 0
+        # Fallback share rate: actual-share-count method evenly split across ports
+        fallback_rate = actual_10m / n / 600 if actual_10m > 0 else 0
         per_port_acc  = total_acc // n if total_acc > 0 else 0
         for w in ports:
-            # hashrate ∝ difficulty (vardiff keeps share rate constant per connection)
-            w["hashrate_mhs"] = round(w["difficulty"] * share_rate, 4)
+            pdiff = w["difficulty"]
+            vd    = vardiff_by_pdiff.get(pdiff)
+            if vd and vd[1] > 0:
+                # Preferred: direct VARDIFF measurement — shares/sec for this connection
+                share_rate = vd[0] / vd[1]
+            else:
+                # Fallback: derived from accepted-share counts, split evenly across ports
+                share_rate = fallback_rate
+            # hashrate ∝ difficulty (vardiff keeps share rate ~constant per connection)
+            w["hashrate_mhs"] = round(pdiff * share_rate, 4)
             w["accepted"]     = per_port_acc
             w.pop("_wallet", None)
             w.pop("_last_pushdif_dt", None)
