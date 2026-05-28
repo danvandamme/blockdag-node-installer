@@ -2598,25 +2598,60 @@ class Handler(BaseHTTPRequestHandler):
         self._json({k: data.get(k, "") for k in ENV_EXPOSED_KEYS})
 
     def _save_env_config(self):
-        """Write posted key/value pairs to both .env files, rebuild PG_URL, then restart the stack."""
+        """Write posted key/value pairs to both .env files, rebuild PG_URL,
+        update Postgres credentials if they changed, then restart the stack."""
         try:
             body = json.loads(self._body())
+
+            # Snapshot old Postgres credentials BEFORE writing new values
+            old_data    = _parse_env(ENV_FILE)
+            old_pg_user = old_data.get("POSTGRES_USER", "test")
+            old_pg_pass = old_data.get("POSTGRES_PASSWORD", "test")
+
             for key in ENV_EXPOSED_KEYS:
                 if key in body and key != "PG_URL":   # PG_URL is auto-rebuilt below
                     _write_env_key(ENV_FILE, key, body[key])
                     _write_env_key(ENV_POOL_FILE, key, body[key])
-            # Rebuild PG_URL from current postgres fields
-            data = _parse_env(ENV_FILE)
+
+            # Rebuild PG_URL from new postgres fields
+            data        = _parse_env(ENV_FILE)
+            new_pg_user = data.get("POSTGRES_USER", "test")
+            new_pg_pass = data.get("POSTGRES_PASSWORD", "test")
             pg_url = (
-                f"postgres://{data.get('POSTGRES_USER','test')}"
-                f":{data.get('POSTGRES_PASSWORD','test')}"
+                f"postgres://{new_pg_user}"
+                f":{new_pg_pass}"
                 f"@pool-db:5432/{data.get('POSTGRES_DB','pool')}"
             )
             _write_env_key(ENV_FILE, "PG_URL", pg_url)
             _write_env_key(ENV_POOL_FILE, "PG_URL", pg_url)
+
+            pg_user_changed = new_pg_user != old_pg_user
+            pg_pass_changed = new_pg_pass != old_pg_pass
+
             # Restart the stack in background so response returns immediately
             def _restart():
                 try:
+                    # Apply Postgres credential changes while the DB is still running
+                    if pg_user_changed or pg_pass_changed:
+                        safe_pass = new_pg_pass.replace("'", "''")
+                        if pg_user_changed:
+                            sql = (
+                                f'CREATE USER "{new_pg_user}" WITH SUPERUSER '
+                                f"PASSWORD '{safe_pass}'; "
+                                f'ALTER DATABASE pool OWNER TO "{new_pg_user}";'
+                            )
+                            print(f"[Config] Creating Postgres user '{new_pg_user}'...")
+                        else:
+                            sql = f'ALTER USER "{old_pg_user}" WITH PASSWORD \'{safe_pass}\';'
+                            print(f"[Config] Updating Postgres password for '{old_pg_user}'...")
+                        r = subprocess.run(
+                            ["docker", "compose", "exec", "-T", "pool-db",
+                             "psql", "-U", old_pg_user, "-d", "pool", "-c", sql],
+                            cwd=str(INSTALL_DIR), capture_output=True, text=True)
+                        if r.returncode != 0 and "already exists" not in r.stderr:
+                            print(f"[Config] Warning: Postgres credential update failed: {r.stderr.strip()}")
+                        else:
+                            print("[Config] Postgres credentials updated successfully.")
                     subprocess.run(
                         ["docker", "compose", "down"],
                         cwd=str(INSTALL_DIR), capture_output=True)
