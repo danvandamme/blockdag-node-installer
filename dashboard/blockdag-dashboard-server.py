@@ -2780,26 +2780,33 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"enabled": False, "error": str(e)})
 
     def _save_autostart_config(self):
-        """Register or unregister the BlockDAG-AutoStart scheduled task."""
+        """Register or unregister the BlockDAG-AutoStart scheduled task.
+
+        Runs as the current user (no SYSTEM / admin elevation needed).
+        Trigger: AtLogOn with a 60-second delay so Docker Desktop has
+        time to start before the compose command runs.
+        """
         try:
             body    = json.loads(self._body())
             enabled = bool(body.get("enabled", False))
             if enabled:
                 install_str = str(INSTALL_DIR).replace("'", "''")
+                # No -Principal → task runs as current user.
+                # -RunLevel Highest → uses the user's full token (elevated if they're an admin).
+                # AtLogOn + PT1M delay → fires 60 s after login, giving Docker Desktop time to init.
                 ps_cmd = (
                     f"$a = New-ScheduledTaskAction "
                     f"-Execute 'powershell.exe' "
-                    f"-Argument '-NonInteractive -ExecutionPolicy Bypass -Command \"docker compose up -d\"' "
+                    f"-Argument '-NonInteractive -ExecutionPolicy Bypass "
+                    f"-Command \"Set-Location \"{install_str}\"; docker compose up -d\"' "
                     f"-WorkingDirectory '{install_str}'; "
-                    f"$t = New-ScheduledTaskTrigger -AtStartup; "
-                    f"$t.Delay = 'PT2M'; "
-                    f"$p = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest "
-                    f"-LogonType ServiceAccount; "
+                    f"$t = New-ScheduledTaskTrigger -AtLogOn; "
+                    f"$t.Delay = 'PT1M'; "
                     f"$s = New-ScheduledTaskSettingsSet "
                     f"-ExecutionTimeLimit ([TimeSpan]::FromHours(1)) "
                     f"-StartWhenAvailable -MultipleInstances IgnoreNew; "
                     f"Register-ScheduledTask -TaskName '{AUTOSTART_TASK_NAME}' "
-                    f"-Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null"
+                    f"-Action $a -Trigger $t -Settings $s -RunLevel Highest -Force | Out-Null"
                 )
                 r = subprocess.run(
                     ["powershell", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],

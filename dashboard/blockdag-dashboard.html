@@ -124,7 +124,7 @@
 </div>
 
 <div class="toolbar">
-  <h1><img src="logo.ico" alt="DVD Mining Logo" style="width:40px;height:40px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:8px;"> BlockDAG node monitor</h1>
+  <h1><i class="ti ti-activity"></i> BlockDAG node monitor</h1>
 </div>
 
 <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
@@ -1115,7 +1115,7 @@ async function setAutostart(enabled) {
     const j = await r.json();
     if (j.ok) {
       st.textContent = enabled
-        ? 'Startup task registered — containers start 2 min after boot.'
+        ? 'Startup task registered — containers start 60 s after you log in.'
         : 'Startup task removed.';
       st.className = 'ctrl-status ok';
     } else {
@@ -3407,7 +3407,7 @@ setInterval(updateUptime, 1000);
       </label>
     </div>
     <div style="font-size:0.8em;color:var(--text-muted);margin-bottom:6px;padding-left:2px;">
-      Registers a Windows scheduled task that runs <code>docker compose up&nbsp;-d</code> as SYSTEM, 2 minutes after boot. Requires the Docker Engine service to be set to start automatically.
+      Registers a Windows scheduled task that runs <code>docker compose up&nbsp;-d</code> as your user account, 60 seconds after you log in (giving Docker Desktop time to start first).
     </div>
     <div id="cfg-autostart-status" class="ctrl-status" style="margin-bottom:10px;"></div>
 
