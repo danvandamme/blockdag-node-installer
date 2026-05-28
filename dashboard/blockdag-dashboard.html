@@ -1074,6 +1074,8 @@ function openConfigModal() {
   const overlay = document.getElementById('cfg-modal-overlay');
   overlay.style.display = 'flex';
   document.getElementById('cfg-status').className = 'ctrl-status';
+  document.getElementById('cfg-autostart-status').className = 'ctrl-status';
+  document.getElementById('cfg-autostart-status').textContent = '';
   fetch('/env/config').then(r => r.json()).then(data => {
     const setv = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
     setv('cfg-wallet',  data.MINING_ADDRESS);
@@ -1093,6 +1095,40 @@ function openConfigModal() {
     setv('cfg-node-peers',    data.NODE_MAX_PEERS);
     updatePgUrl();
   }).catch(() => {});
+  fetch('/autostart/config').then(r => r.json()).then(data => {
+    const el = document.getElementById('cfg-autostart');
+    if (el) el.checked = data.enabled === true;
+  }).catch(() => {});
+}
+
+async function setAutostart(enabled) {
+  const chk = document.getElementById('cfg-autostart');
+  const st  = document.getElementById('cfg-autostart-status');
+  st.textContent = enabled ? 'Registering startup task…' : 'Removing startup task…';
+  st.className = 'ctrl-status';
+  if (chk) chk.disabled = true;
+  try {
+    const r = await fetch('/autostart/config', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ enabled })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      st.textContent = enabled
+        ? 'Startup task registered — containers start 2 min after boot.'
+        : 'Startup task removed.';
+      st.className = 'ctrl-status ok';
+    } else {
+      st.textContent = 'Error: ' + (j.error || 'Unknown');
+      st.className = 'ctrl-status err';
+      if (chk) chk.checked = !enabled; // revert
+    }
+  } catch(e) {
+    st.textContent = 'Failed to reach server.';
+    st.className = 'ctrl-status err';
+    if (chk) chk.checked = !enabled; // revert
+  }
+  if (chk) chk.disabled = false;
 }
 
 function closeConfigModal() {
@@ -3359,6 +3395,21 @@ setInterval(updateUptime, 1000);
       <code>C:\blockdag node\.env</code> and <code>asic-pool\.env</code>, then restart.
       Never enter your private key into a web interface.
     </div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--border);">
+      <i class="ti ti-rocket"></i> Startup
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0 8px;">
+      <span style="font-size:13px;font-weight:500;"><i class="ti ti-player-play" style="margin-right:4px;"></i>Auto-start on boot</span>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+        <input type="checkbox" id="cfg-autostart" onchange="setAutostart(this.checked)" />
+        <span style="font-size:13px;color:var(--text-muted);">Start Docker containers at system startup</span>
+      </label>
+    </div>
+    <div style="font-size:0.8em;color:var(--text-muted);margin-bottom:6px;padding-left:2px;">
+      Registers a Windows scheduled task that runs <code>docker compose up&nbsp;-d</code> as SYSTEM, 2 minutes after boot. Requires the Docker Engine service to be set to start automatically.
+    </div>
+    <div id="cfg-autostart-status" class="ctrl-status" style="margin-bottom:10px;"></div>
 
     <div style="display:flex;gap:10px;justify-content:flex-end;">
       <button onclick="closeConfigModal()">Cancel</button>

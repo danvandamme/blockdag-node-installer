@@ -73,7 +73,8 @@ PAYOUT_FILE      = Path(__file__).parent / "payout.json"
 BACKUP_CFG_FILE  = Path(__file__).parent / "backup-config.json"
 ALERT_HISTORY_FILE = Path(__file__).parent / "alert-history.json"
 MAINTENANCE_FILE  = Path(__file__).parent / "maintenance.json"
-WATCHDOG_CFG_FILE = Path(__file__).parent / "watchdog-config.json"
+WATCHDOG_CFG_FILE   = Path(__file__).parent / "watchdog-config.json"
+AUTOSTART_TASK_NAME = "BlockDAG-AutoStart"
 PEERS_FILE         = Path(__file__).parent / "Network Peers.txt"
 PEERS_MANAGED_FILE = Path(__file__).parent / "peers-managed.txt"
 COMPOSE_FILE       = INSTALL_DIR / "docker-compose.yml"
@@ -919,6 +920,8 @@ class Handler(BaseHTTPRequestHandler):
             self._get_maintenance_config()
         elif self.path == "/watchdog/config":
             self._get_watchdog_config()
+        elif self.path == "/autostart/config":
+            self._get_autostart_config()
         elif self.path == "/env/config":
             self._get_env_config()
         elif self.path.startswith("/logs/popup"):
@@ -959,8 +962,9 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/peers/clear":      self._clear_peers()
         elif p == "/peers/save":       self._save_peers()
         elif p == "/maintenance/config": self._set_maintenance_config()
-        elif p == "/watchdog/config":  self._save_watchdog_config()
-        elif p == "/env/config":       self._save_env_config()
+        elif p == "/watchdog/config":   self._save_watchdog_config()
+        elif p == "/autostart/config":  self._save_autostart_config()
+        elif p == "/env/config":        self._save_env_config()
         elif p == "/update":           self._do_update()
         elif p == "/restart-server":   self._restart_server()
         else:                          self.send_error(404)
@@ -2760,6 +2764,57 @@ class Handler(BaseHTTPRequestHandler):
             }
             _save_watchdog_cfg(cfg)
             self._json({"ok": True})
+        except Exception as e:
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _get_autostart_config(self):
+        """Return whether the BlockDAG-AutoStart scheduled task exists."""
+        try:
+            r = subprocess.run(
+                ["powershell", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+                 f"if (Get-ScheduledTask -TaskName '{AUTOSTART_TASK_NAME}' "
+                 f"-ErrorAction SilentlyContinue) {{ 'true' }} else {{ 'false' }}"],
+                capture_output=True, text=True, timeout=10)
+            self._json({"enabled": r.stdout.strip().lower() == "true"})
+        except Exception as e:
+            self._json({"enabled": False, "error": str(e)})
+
+    def _save_autostart_config(self):
+        """Register or unregister the BlockDAG-AutoStart scheduled task."""
+        try:
+            body    = json.loads(self._body())
+            enabled = bool(body.get("enabled", False))
+            if enabled:
+                install_str = str(INSTALL_DIR).replace("'", "''")
+                ps_cmd = (
+                    f"$a = New-ScheduledTaskAction "
+                    f"-Execute 'powershell.exe' "
+                    f"-Argument '-NonInteractive -ExecutionPolicy Bypass -Command \"docker compose up -d\"' "
+                    f"-WorkingDirectory '{install_str}'; "
+                    f"$t = New-ScheduledTaskTrigger -AtStartup; "
+                    f"$t.Delay = 'PT2M'; "
+                    f"$p = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest "
+                    f"-LogonType ServiceAccount; "
+                    f"$s = New-ScheduledTaskSettingsSet "
+                    f"-ExecutionTimeLimit ([TimeSpan]::FromHours(1)) "
+                    f"-StartWhenAvailable -MultipleInstances IgnoreNew; "
+                    f"Register-ScheduledTask -TaskName '{AUTOSTART_TASK_NAME}' "
+                    f"-Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null"
+                )
+                r = subprocess.run(
+                    ["powershell", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                    capture_output=True, text=True, timeout=30)
+                if r.returncode != 0:
+                    err = r.stderr.strip() or r.stdout.strip()
+                    self._json({"ok": False, "error": err}, 500)
+                    return
+            else:
+                subprocess.run(
+                    ["powershell", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+                     f"Unregister-ScheduledTask -TaskName '{AUTOSTART_TASK_NAME}' "
+                     f"-Confirm:$false -ErrorAction SilentlyContinue"],
+                    capture_output=True, text=True, timeout=30)
+            self._json({"ok": True, "enabled": enabled})
         except Exception as e:
             self._json({"ok": False, "error": str(e)}, 500)
 
