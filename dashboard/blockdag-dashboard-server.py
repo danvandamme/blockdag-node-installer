@@ -2791,14 +2791,15 @@ class Handler(BaseHTTPRequestHandler):
             enabled = bool(body.get("enabled", False))
             if enabled:
                 install_str = str(INSTALL_DIR).replace("'", "''")
-                # No -Principal → task runs as current user.
-                # -RunLevel Highest → uses the user's full token (elevated if they're an admin).
+                # No -Principal → task runs as current user (interactive logon).
+                # No -RunLevel Highest → normal user token, no elevation needed to register.
+                # docker compose talks to Docker Desktop via socket — no admin required.
                 # AtLogOn + PT1M delay → fires 60 s after login, giving Docker Desktop time to init.
                 ps_cmd = (
                     f"$a = New-ScheduledTaskAction "
                     f"-Execute 'powershell.exe' "
                     f"-Argument '-NonInteractive -ExecutionPolicy Bypass "
-                    f"-Command \"Set-Location \"{install_str}\"; docker compose up -d\"' "
+                    f"-Command \"Set-Location \\\"{install_str}\\\"; docker compose up -d\"' "
                     f"-WorkingDirectory '{install_str}'; "
                     f"$t = New-ScheduledTaskTrigger -AtLogOn; "
                     f"$t.Delay = 'PT1M'; "
@@ -2806,7 +2807,7 @@ class Handler(BaseHTTPRequestHandler):
                     f"-ExecutionTimeLimit ([TimeSpan]::FromHours(1)) "
                     f"-StartWhenAvailable -MultipleInstances IgnoreNew; "
                     f"Register-ScheduledTask -TaskName '{AUTOSTART_TASK_NAME}' "
-                    f"-Action $a -Trigger $t -Settings $s -RunLevel Highest -Force | Out-Null"
+                    f"-Action $a -Trigger $t -Settings $s -Force | Out-Null"
                 )
                 r = subprocess.run(
                     ["powershell", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
