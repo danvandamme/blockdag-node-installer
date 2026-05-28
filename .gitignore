@@ -33,6 +33,8 @@ shortcuts/
 
 # ── Developer tools (local only) ─────────────────────────────────────────────
 git-push.bat
+src/docker/
+tools/
 
 # ── Windows junk ──────────────────────────────────────────────────────────────
 Thumbs.db
