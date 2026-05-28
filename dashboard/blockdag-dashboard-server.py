@@ -1499,7 +1499,7 @@ class Handler(BaseHTTPRequestHandler):
                 "total_reward_bdag": round(total_reward / 1e18, 4),
                 "pending_credits":   {"count": pending_count, "bdag": pending_bdag},
                 "payouts":           {"count": payout_count,  "bdag": payout_bdag},
-                "active_miners":  active_miners,
+                "active_miners":  len(miners_list),
                 "recent_blocks":  recent,
                 "health":         health,
                 "shares_accepted": shares_accepted,
