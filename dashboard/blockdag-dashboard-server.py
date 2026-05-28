@@ -274,35 +274,50 @@ def _parse_remote_miners():
 
 
 # ── Pool log regex patterns (for per-worker extraction) ──────────────────────
-_POOL_LOG_TS_RE  = re.compile(r"^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})")
-_POOL_AUTH_RE    = re.compile(r"\[((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\]\s+authorize accepted user=([^\s]+)")
-_POOL_PUSHDIF_RE = re.compile(r"PUSHDIF\s+->\s+((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\s+mining\.set_difficulty\s+([0-9.]+)")
-_POOL_SHARE_RE   = re.compile(r"valid share accepted\s+([0-9.]+)\s+[^0-9]+[0-9]+\s+worker=([^\s]+)")
+_POOL_LOG_TS_RE    = re.compile(r"^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})")
+_POOL_AUTH_RE      = re.compile(r"\[((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\]\s+authorize accepted user=([^\s]+)")
+_POOL_PUSHDIF_RE   = re.compile(r"PUSHDIF\s+->\s+((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\s+mining\.set_difficulty\s+([0-9.]+)")
+_POOL_SHARE_RE     = re.compile(r"valid share accepted\s+([0-9.]+)\s+[^0-9]+[0-9]+\s+worker=([^\s]+)")
+_POOL_SUPPRESSED_RE = re.compile(r"suppressedDiff=([0-9.]+)")
 _POOL_SUBMIT_RE  = re.compile(r"submit from worker=([^\s]+)")
 _POOL_ANSI_RE    = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _parse_pool_workers():
     """
-    Parse the asic-pool container logs to build a per-worker list with real
-    worker names, IPs, assigned difficulty, hashrate, and recent share count.
+    Parse the asic-pool container logs to build a per-port worker list.
 
-    Uses --tail 5000 so auth events from hours ago are still captured (a
-    miner that connected 2h ago won't re-authenticate until it reconnects).
+    Each TCP connection (unique port) is one row, regardless of how many
+    ports share the same wallet address.  Since the pool only logs
+    'worker=<wallet>' on share events (never the port), hashrate is computed
+    as: total_wallet_hashrate / number_of_active_ports_for_that_wallet.
 
-    IMPORTANT — Docker NAT: the pool runs inside Docker and sees ALL external
-    miners as source IP 172.18.0.1 (the bridge gateway).  Real client IPs are
-    invisible.  Port is the only field that uniquely identifies a connection,
-    so workers are keyed by (ip, port).  Each TCP connection — and therefore
-    each physical miner — gets its own row even when multiple miners use the
-    same bare wallet address.
+    Three-pass strategy
+    -------------------
+    Pass 1 — sequential scan:
+      AUTH_ACCEPT  → register (ip, port) entry with wallet/worker name
+      PUSHDIF      → update difficulty + record last-seen log timestamp;
+                     also seeds placeholder entries for ports whose auth event
+                     has scrolled past the --tail window
+      valid share  → accumulate (acceptedDiff + suppressedDiff) per wallet
+                     into a 10-minute rolling bucket; also count shares
 
-    Parsing strategy (single sequential pass):
-      AUTH_ACCEPT  → new worker entry keyed by (ip, port)
-      PUSHDIF      → updates difficulty on the (ip, port) entry directly
-      valid share  → increments share count; when multiple connections share
-                     the same user string (same bare wallet, no .workername),
-                     share difficulty is split equally between them
+    Pass 2 — determine log_now (latest timestamp seen) so that "active"
+      comparisons use log time, not wall-clock time.  This prevents stale
+      disconnected ports from being treated as active just because we called
+      the function later.
+
+    Pass 3 — compute per-port hashrate:
+      active ports  = last PUSHDIF within 5 min of log_now
+      per_port_hr   = wallet_diff_10m / 600s / active_port_count  (in MH/s; pool diff units are already MH-normalised)
+      Only active ports are returned; stale connections are filtered out.
+
+    suppressedDiff fix
+    ------------------
+    The pool batches shares and suppresses most individual logging.  The
+    'valid share accepted' line only shows the LAST share in each batch;
+    suppressedDiff contains the summed difficulty of the suppressed ones.
+    Ignoring suppressedDiff causes ~90 % of actual work to be invisible.
     """
     try:
         r = subprocess.run(
@@ -312,51 +327,67 @@ def _parse_pool_workers():
     except Exception:
         return []
 
-    now          = datetime.now()
-    ten_min_ago  = now - timedelta(minutes=10)
+    workers       = {}   # (ip, port) → worker dict
+    wallet_diff   = {}   # wallet_str → total difficulty in 10-min window
+    wallet_shares = {}   # wallet_str → accepted-share events in 10-min window
 
-    workers = {}   # (ip, port) → miner dict  — port is unique per TCP connection
+    # ── Pre-pass: find the latest timestamp in the log ────────────────────────
+    # Must be done before the main scan so ten_min_ago/five_min_ago are fixed
+    # anchor points, not a moving target that causes every share to qualify.
+    log_now = None
+    for line in lines:
+        ts_m = _POOL_LOG_TS_RE.match(line)
+        if ts_m:
+            try:
+                ts_dt = datetime.strptime(ts_m.group(1), "%Y/%m/%d %H:%M:%S")
+                if log_now is None or ts_dt > log_now:
+                    log_now = ts_dt
+            except Exception:
+                pass
+    if log_now is None:
+        log_now = datetime.now()
 
+    ten_min_ago  = log_now - timedelta(minutes=10)
+    five_min_ago = log_now - timedelta(minutes=5)
+
+    # ── Main scan ─────────────────────────────────────────────────────────────
     for line in lines:
         ts_str = ""
         ts_dt  = None
         ts_m = _POOL_LOG_TS_RE.match(line)
         if ts_m:
-            raw    = ts_m.group(1)                              # "20240115 14:30:00"
-            ts_str = raw[:10].replace("/", "-") + raw[10:16]   # "2024-01-15 14:30"
+            raw    = ts_m.group(1)
+            ts_str = raw[:10].replace("/", "-") + raw[10:16]
             try:
                 ts_dt = datetime.strptime(raw, "%Y/%m/%d %H:%M:%S")
             except Exception:
-                ts_dt = None
+                pass
 
         auth = _POOL_AUTH_RE.search(line)
         if auth:
             ip, port, user = auth.group(1), auth.group(2), auth.group(3)
-            # Pool validates bare EVM address; wallet.workername format is rejected.
-            # user is always just the bare wallet address here.
             dot    = user.rfind(".")
             wallet = user[:dot] if dot > 0 else user
             wname  = user[dot + 1:] if dot > 0 else ""
-            key = (ip, port)
+            key    = (ip, port)
             if key not in workers:
                 workers[key] = {
-                    "address":      wallet,
-                    "worker":       wname,
-                    "ip":           ip,
-                    "port":         port,
-                    "difficulty":   0,
-                    "last_active":  ts_str,
-                    "accepted":     0,
-                    "rejected":     0,
-                    "hashrate_mhs": 0,
-                    "_diff_10m":    0.0,   # difficulty sum for last 10 min (hashrate)
-                    "_user":        user,  # kept for share matching
+                    "address":          wallet,
+                    "worker":           wname,
+                    "ip":               ip,
+                    "port":             port,
+                    "difficulty":       0,
+                    "last_active":      ts_str,
+                    "accepted":         0,
+                    "rejected":         0,
+                    "hashrate_mhs":     0,
+                    "_wallet":          wallet,
+                    "_last_pushdif_dt": None,
                 }
             else:
-                # Reconnect on same port — refresh auth info and timestamp
-                workers[key]["address"]  = wallet
-                workers[key]["worker"]   = wname
-                workers[key]["_user"]    = user
+                workers[key]["address"] = wallet
+                workers[key]["worker"]  = wname
+                workers[key]["_wallet"] = wallet
                 if ts_str > workers[key]["last_active"]:
                     workers[key]["last_active"] = ts_str
             continue
@@ -365,39 +396,64 @@ def _parse_pool_workers():
         if diff_m:
             ip, port = diff_m.group(1), diff_m.group(2)
             key = (ip, port)
-            if key in workers:
-                workers[key]["difficulty"] = float(diff_m.group(3))
+            if key not in workers:
+                # Auth scrolled out of window — placeholder so this port still shows
+                workers[key] = {
+                    "address":          "",
+                    "worker":           "",
+                    "ip":               ip,
+                    "port":             port,
+                    "difficulty":       float(diff_m.group(3)),
+                    "last_active":      ts_str,
+                    "accepted":         0,
+                    "rejected":         0,
+                    "hashrate_mhs":     0,
+                    "_wallet":          "",
+                    "_last_pushdif_dt": ts_dt,
+                }
+            else:
+                workers[key]["difficulty"]       = float(diff_m.group(3))
+                workers[key]["_last_pushdif_dt"] = ts_dt
+                if ts_str > workers[key].get("last_active", ""):
+                    workers[key]["last_active"] = ts_str
             continue
 
         share = _POOL_SHARE_RE.search(line)
         if share:
+            # acceptedDiff + suppressedDiff = total work for this batch
             share_diff = float(share.group(1))
-            user       = share.group(2)
-            # Find all connected workers that authenticated with this user string.
-            # When multiple miners use the same bare wallet the share can't be
-            # attributed to a specific machine, so split difficulty equally between
-            # all active connections for that wallet.
-            matching = [w for w in workers.values() if w.get("_user") == user]
-            if not matching:
-                continue
-            split_diff = share_diff / len(matching)
-            for w in matching:
-                w["accepted"] += 1
-                if ts_str > w["last_active"]:
-                    w["last_active"] = ts_str
-                if ts_dt and ts_dt >= ten_min_ago:
-                    w["_diff_10m"] += split_diff
+            sup_m = _POOL_SUPPRESSED_RE.search(line)
+            if sup_m:
+                share_diff += float(sup_m.group(1))
+            wallet = share.group(2)   # always the bare wallet address
+            wallet_shares[wallet] = wallet_shares.get(wallet, 0) + 1
+            if ts_dt and ts_dt >= ten_min_ago:
+                wallet_diff[wallet] = wallet_diff.get(wallet, 0.0) + share_diff
 
-    # Compute hashrate from recent share difficulty, then strip internal keys
+    # ── Pass 2: compute per-port hashrate and filter to active ports ──────────
+    # Group active ports by wallet so we can divide total hashrate equally
+    active_by_wallet = {}   # wallet → [worker_dict, ...]
     for w in workers.values():
-        diff_10m = w.pop("_diff_10m", 0.0)
-        if diff_10m > 0:
-            w["hashrate_mhs"] = round(diff_10m / 600 / 1e6, 4)
-        w.pop("_user", None)
+        last_pd = w.get("_last_pushdif_dt")
+        if last_pd and last_pd >= five_min_ago:
+            wlt = w["_wallet"]
+            active_by_wallet.setdefault(wlt, []).append(w)
 
-    return sorted(workers.values(),
-                  key=lambda x: x.get("last_active") or "",
-                  reverse=True)
+    result = []
+    for wallet, ports in active_by_wallet.items():
+        n          = len(ports)
+        total_diff = wallet_diff.get(wallet, 0.0)
+        total_acc  = wallet_shares.get(wallet, 0)
+        per_port_hr  = round(total_diff / 600 / n, 4) if total_diff > 0 else 0
+        per_port_acc = total_acc // n if total_acc > 0 else 0
+        for w in ports:
+            w["hashrate_mhs"] = per_port_hr
+            w["accepted"]     = per_port_acc
+            w.pop("_wallet", None)
+            w.pop("_last_pushdif_dt", None)
+            result.append(w)
+
+    return sorted(result, key=lambda x: x.get("last_active") or "", reverse=True)
 
 
 def _parse_block_finders(block_times):
