@@ -497,8 +497,9 @@ def _parse_pool_workers():
             else:
                 # Fallback: derived from accepted-share counts, split evenly across ports
                 share_rate = fallback_rate
-            # hashrate ∝ difficulty (vardiff keeps share rate ~constant per connection)
-            w["hashrate_mhs"] = round(pdiff * share_rate, 4)
+            # hashrate (MH/s) = stratum_diff × 65536 (hashes/unit) × share_rate / 1e6
+            # 65536 = 2^16, the per-difficulty-unit hash count for this coin's target
+            w["hashrate_mhs"] = round(pdiff * 65536 * share_rate / 1e6, 4)
             w["accepted"]     = per_port_acc
             w.pop("_wallet", None)
             w.pop("_last_pushdif_dt", None)
