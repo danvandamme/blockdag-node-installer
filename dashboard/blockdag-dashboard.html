@@ -3407,7 +3407,7 @@ setInterval(updateUptime, 1000);
       </label>
     </div>
     <div style="font-size:0.8em;color:var(--text-muted);margin-bottom:6px;padding-left:2px;">
-      Registers a Windows scheduled task that runs <code>docker compose up&nbsp;-d</code> as your user account, 60 seconds after you log in (giving Docker Desktop time to start first).
+      Adds a Windows startup entry (<code>HKCU\...\Run</code>) that runs <code>docker compose up&nbsp;-d</code> 60 seconds after you log in, giving Docker Desktop time to start first. No admin required.
     </div>
     <div id="cfg-autostart-status" class="ctrl-status" style="margin-bottom:10px;"></div>
 

@@ -14,6 +14,10 @@ if hasattr(sys.stderr, 'buffer'):
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
 import json, os, shutil, subprocess, urllib.request, re, threading, time, base64, webbrowser
+try:
+    import winreg as _winreg   # Windows only — used for HKCU Run autostart
+except ImportError:
+    _winreg = None
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -74,7 +78,8 @@ BACKUP_CFG_FILE  = Path(__file__).parent / "backup-config.json"
 ALERT_HISTORY_FILE = Path(__file__).parent / "alert-history.json"
 MAINTENANCE_FILE  = Path(__file__).parent / "maintenance.json"
 WATCHDOG_CFG_FILE   = Path(__file__).parent / "watchdog-config.json"
-AUTOSTART_TASK_NAME = "BlockDAG-AutoStart"
+AUTOSTART_REG_KEY  = r"Software\Microsoft\Windows\CurrentVersion\Run"
+AUTOSTART_REG_NAME = "BlockDAG-AutoStart"
 PEERS_FILE         = Path(__file__).parent / "Network Peers.txt"
 PEERS_MANAGED_FILE = Path(__file__).parent / "peers-managed.txt"
 COMPOSE_FILE       = INSTALL_DIR / "docker-compose.yml"
@@ -2768,60 +2773,49 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": str(e)}, 500)
 
     def _get_autostart_config(self):
-        """Return whether the BlockDAG-AutoStart scheduled task exists."""
+        """Return whether the HKCU Run autostart entry exists."""
+        if not _winreg:
+            self._json({"enabled": False, "error": "winreg not available"}); return
         try:
-            r = subprocess.run(
-                ["powershell", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
-                 f"if (Get-ScheduledTask -TaskName '{AUTOSTART_TASK_NAME}' "
-                 f"-ErrorAction SilentlyContinue) {{ 'true' }} else {{ 'false' }}"],
-                capture_output=True, text=True, timeout=10)
-            self._json({"enabled": r.stdout.strip().lower() == "true"})
+            enabled = False
+            with _winreg.OpenKey(_winreg.HKEY_CURRENT_USER, AUTOSTART_REG_KEY) as k:
+                try:
+                    _winreg.QueryValueEx(k, AUTOSTART_REG_NAME)
+                    enabled = True
+                except FileNotFoundError:
+                    pass
+            self._json({"enabled": enabled})
         except Exception as e:
             self._json({"enabled": False, "error": str(e)})
 
     def _save_autostart_config(self):
-        """Register or unregister the BlockDAG-AutoStart scheduled task.
+        """Add or remove a HKCU\\Run registry entry that starts the stack at login.
 
-        Runs as the current user (no SYSTEM / admin elevation needed).
-        Trigger: AtLogOn with a 60-second delay so Docker Desktop has
-        time to start before the compose command runs.
+        Uses winreg directly — no PowerShell, no Task Scheduler, no elevation needed.
+        Start-Sleep 60 inside the command gives Docker Desktop time to initialise.
         """
+        if not _winreg:
+            self._json({"ok": False, "error": "winreg not available (non-Windows?)"}); return
         try:
             body    = json.loads(self._body())
             enabled = bool(body.get("enabled", False))
-            if enabled:
-                install_str = str(INSTALL_DIR).replace("'", "''")
-                # No -Principal → task runs as current user (interactive logon).
-                # No -RunLevel Highest → normal user token, no elevation needed to register.
-                # docker compose talks to Docker Desktop via socket — no admin required.
-                # AtLogOn + PT1M delay → fires 60 s after login, giving Docker Desktop time to init.
-                ps_cmd = (
-                    f"$a = New-ScheduledTaskAction "
-                    f"-Execute 'powershell.exe' "
-                    f"-Argument '-NonInteractive -ExecutionPolicy Bypass "
-                    f"-Command \"Set-Location \\\"{install_str}\\\"; docker compose up -d\"' "
-                    f"-WorkingDirectory '{install_str}'; "
-                    f"$t = New-ScheduledTaskTrigger -AtLogOn; "
-                    f"$t.Delay = 'PT1M'; "
-                    f"$s = New-ScheduledTaskSettingsSet "
-                    f"-ExecutionTimeLimit ([TimeSpan]::FromHours(1)) "
-                    f"-StartWhenAvailable -MultipleInstances IgnoreNew; "
-                    f"Register-ScheduledTask -TaskName '{AUTOSTART_TASK_NAME}' "
-                    f"-Action $a -Trigger $t -Settings $s -Force | Out-Null"
-                )
-                r = subprocess.run(
-                    ["powershell", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-                    capture_output=True, text=True, timeout=30)
-                if r.returncode != 0:
-                    err = r.stderr.strip() or r.stdout.strip()
-                    self._json({"ok": False, "error": err}, 500)
-                    return
-            else:
-                subprocess.run(
-                    ["powershell", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
-                     f"Unregister-ScheduledTask -TaskName '{AUTOSTART_TASK_NAME}' "
-                     f"-Confirm:$false -ErrorAction SilentlyContinue"],
-                    capture_output=True, text=True, timeout=30)
+            with _winreg.OpenKey(
+                    _winreg.HKEY_CURRENT_USER, AUTOSTART_REG_KEY,
+                    0, _winreg.KEY_SET_VALUE) as k:
+                if enabled:
+                    install_str = str(INSTALL_DIR)
+                    run_val = (
+                        f"powershell -WindowStyle Hidden -NonInteractive "
+                        f"-ExecutionPolicy Bypass "
+                        f"-Command \"Start-Sleep 60; "
+                        f"Set-Location '{install_str}'; docker compose up -d\""
+                    )
+                    _winreg.SetValueEx(k, AUTOSTART_REG_NAME, 0, _winreg.REG_SZ, run_val)
+                else:
+                    try:
+                        _winreg.DeleteValue(k, AUTOSTART_REG_NAME)
+                    except FileNotFoundError:
+                        pass  # already gone — not an error
             self._json({"ok": True, "enabled": enabled})
         except Exception as e:
             self._json({"ok": False, "error": str(e)}, 500)
