@@ -277,8 +277,9 @@ def _parse_remote_miners():
 _POOL_LOG_TS_RE    = re.compile(r"^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})")
 _POOL_AUTH_RE      = re.compile(r"\[((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\]\s+authorize accepted user=([^\s]+)")
 _POOL_PUSHDIF_RE   = re.compile(r"PUSHDIF\s+->\s+((?:\d{1,3}\.){3}\d{1,3}):([0-9]+)\s+mining\.set_difficulty\s+([0-9.]+)")
-_POOL_SHARE_RE     = re.compile(r"valid share accepted\s+([0-9.]+)\s+[^0-9]+[0-9]+\s+worker=([^\s]+)")
-_POOL_SUPPRESSED_RE = re.compile(r"suppressedDiff=([0-9.]+)")
+_POOL_SHARE_RE          = re.compile(r"valid share accepted\s+([0-9.]+)\s+[^0-9]+[0-9]+\s+worker=([^\s]+)")
+_POOL_SUPPRESSED_RE     = re.compile(r"suppressedDiff=([0-9.]+)")
+_POOL_SUPPRESSED_CNT_RE = re.compile(r"\bsuppressed=(\d+)\b")
 _POOL_SUBMIT_RE  = re.compile(r"submit from worker=([^\s]+)")
 _POOL_ANSI_RE    = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -289,35 +290,42 @@ def _parse_pool_workers():
 
     Each TCP connection (unique port) is one row, regardless of how many
     ports share the same wallet address.  Since the pool only logs
-    'worker=<wallet>' on share events (never the port), hashrate is computed
-    as: total_wallet_hashrate / number_of_active_ports_for_that_wallet.
+    'worker=<wallet>' on share events (never the port), per-port hashrate is
+    estimated using each port's current vardiff difficulty as a proxy.
+
+    Why difficulty = hashrate proxy
+    --------------------------------
+    The pool's vardiff adjusts each connection's difficulty to maintain a
+    constant share rate (~0.33 shares/sec).  A miner doing 5× the work gets
+    5× the difficulty.  So: hashrate_i ∝ difficulty_i.
+
+    Formula:
+      actual_shares_10m  = sum(1 + suppressed_count) for all logged events
+                           in the 10-min window (counts every real share
+                           including suppressed batches)
+      share_rate_per_port = actual_shares_10m / n_active_ports / 600s
+      hashrate_per_port   = difficulty_i × share_rate_per_port
+
+    Why NOT use (acceptedDiff + suppressedDiff) / time
+    ---------------------------------------------------
+    suppressedDiff is the sum of batched shares at varying difficulties
+    during vardiff adjustment periods.  Because difficulty is rising, the
+    suppressed shares accumulate at higher-and-higher difficulty values,
+    inflating the apparent total by ~10× vs the stable PUSHDIF difficulty.
+    The actual-share-count approach avoids this inflation entirely.
 
     Three-pass strategy
     -------------------
-    Pass 1 — sequential scan:
-      AUTH_ACCEPT  → register (ip, port) entry with wallet/worker name
-      PUSHDIF      → update difficulty + record last-seen log timestamp;
-                     also seeds placeholder entries for ports whose auth event
-                     has scrolled past the --tail window
-      valid share  → accumulate (acceptedDiff + suppressedDiff) per wallet
-                     into a 10-minute rolling bucket; also count shares
-
-    Pass 2 — determine log_now (latest timestamp seen) so that "active"
-      comparisons use log time, not wall-clock time.  This prevents stale
-      disconnected ports from being treated as active just because we called
-      the function later.
-
-    Pass 3 — compute per-port hashrate:
+    Pass 0 (pre-pass) — find log_now (latest timestamp) so ten_min_ago and
+      five_min_ago are fixed anchors, not a moving target.
+    Pass 1 — main scan:
+      AUTH_ACCEPT  → register (ip, port) entry
+      PUSHDIF      → update difficulty + last-seen; seeds placeholders for
+                     ports whose auth event scrolled past the --tail window
+      valid share  → count actual shares (1 + suppressed_count) in 10-min
+                     window; count accepted-event total for display
+    Pass 2 — compute per-port hashrate and filter to active ports:
       active ports  = last PUSHDIF within 5 min of log_now
-      per_port_hr   = wallet_diff_10m / 600s / active_port_count  (in MH/s; pool diff units are already MH-normalised)
-      Only active ports are returned; stale connections are filtered out.
-
-    suppressedDiff fix
-    ------------------
-    The pool batches shares and suppresses most individual logging.  The
-    'valid share accepted' line only shows the LAST share in each batch;
-    suppressedDiff contains the summed difficulty of the suppressed ones.
-    Ignoring suppressedDiff causes ~90 % of actual work to be invisible.
     """
     try:
         r = subprocess.run(
@@ -327,9 +335,9 @@ def _parse_pool_workers():
     except Exception:
         return []
 
-    workers       = {}   # (ip, port) → worker dict
-    wallet_diff   = {}   # wallet_str → total difficulty in 10-min window
-    wallet_shares = {}   # wallet_str → accepted-share events in 10-min window
+    workers             = {}   # (ip, port) → worker dict
+    wallet_shares_10m   = {}   # wallet_str → actual share count in 10-min window (incl. suppressed)
+    wallet_shares_total = {}   # wallet_str → total accepted-event count (all time, for display)
 
     # ── Pre-pass: find the latest timestamp in the log ────────────────────────
     # Must be done before the main scan so ten_min_ago/five_min_ago are fixed
@@ -420,18 +428,20 @@ def _parse_pool_workers():
 
         share = _POOL_SHARE_RE.search(line)
         if share:
-            # acceptedDiff + suppressedDiff = total work for this batch
-            share_diff = float(share.group(1))
-            sup_m = _POOL_SUPPRESSED_RE.search(line)
-            if sup_m:
-                share_diff += float(sup_m.group(1))
             wallet = share.group(2)   # always the bare wallet address
-            wallet_shares[wallet] = wallet_shares.get(wallet, 0) + 1
+            # Total accepted events (all time) — shown in the Shares column
+            wallet_shares_total[wallet] = wallet_shares_total.get(wallet, 0) + 1
+            # Actual share count including suppressed — used for hashrate
             if ts_dt and ts_dt >= ten_min_ago:
-                wallet_diff[wallet] = wallet_diff.get(wallet, 0.0) + share_diff
+                cnt_m  = _POOL_SUPPRESSED_CNT_RE.search(line)
+                actual = (int(cnt_m.group(1)) + 1) if cnt_m else 1
+                wallet_shares_10m[wallet] = wallet_shares_10m.get(wallet, 0) + actual
 
     # ── Pass 2: compute per-port hashrate and filter to active ports ──────────
-    # Group active ports by wallet so we can divide total hashrate equally
+    # Only ports with a PUSHDIF in the last 5 min of log time are "active".
+    # Hashrate per port = difficulty × share_rate_per_port.
+    # All ports targeting the same share rate (set by vardiff), so difficulty
+    # is directly proportional to each miner's actual hash rate.
     active_by_wallet = {}   # wallet → [worker_dict, ...]
     for w in workers.values():
         last_pd = w.get("_last_pushdif_dt")
@@ -441,13 +451,15 @@ def _parse_pool_workers():
 
     result = []
     for wallet, ports in active_by_wallet.items():
-        n          = len(ports)
-        total_diff = wallet_diff.get(wallet, 0.0)
-        total_acc  = wallet_shares.get(wallet, 0)
-        per_port_hr  = round(total_diff / 600 / n, 4) if total_diff > 0 else 0
-        per_port_acc = total_acc // n if total_acc > 0 else 0
+        n             = len(ports)
+        actual_10m    = wallet_shares_10m.get(wallet, 0)
+        total_acc     = wallet_shares_total.get(wallet, 0)
+        # share_rate_per_port: actual shares per second assigned equally to each port
+        share_rate    = actual_10m / n / 600 if actual_10m > 0 else 0
+        per_port_acc  = total_acc // n if total_acc > 0 else 0
         for w in ports:
-            w["hashrate_mhs"] = per_port_hr
+            # hashrate ∝ difficulty (vardiff keeps share rate constant per connection)
+            w["hashrate_mhs"] = round(w["difficulty"] * share_rate, 4)
             w["accepted"]     = per_port_acc
             w.pop("_wallet", None)
             w.pop("_last_pushdif_dt", None)
