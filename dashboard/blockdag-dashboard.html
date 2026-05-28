@@ -985,7 +985,9 @@
         <thead>
           <tr>
             <th style="min-width:220px;">Worker address</th>
+            <th title="TCP connection port — unique per physical miner">Port</th>
             <th>Worker name</th>
+            <th title="Source IP (Docker bridge — always 172.18.0.1 for LAN miners)">IP</th>
             <th title="Pool-assigned vardiff for this worker">Difficulty</th>
             <th>Hashrate (10m)</th>
             <th title="Blocks credited to this wallet">Blocks</th>
@@ -993,7 +995,7 @@
           </tr>
         </thead>
         <tbody id="workers-tbody">
-          <tr><td colspan="6" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
+          <tr><td colspan="8" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; click Refresh.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1796,11 +1798,13 @@ function _applyMinerPatch(j) {
     : `<span style="color:var(--text-dim);">?</span>`;
   if (tbody.querySelector('td[colspan]')) {
     // "No workers" placeholder — replace with a real miner row
-    // Column layout: 0=address, 1=worker, 2=difficulty, 3=hashrate, 4=blocks, 5=last seen
+    // Column layout: 0=address, 1=port, 2=worker, 3=ip, 4=difficulty, 5=hashrate, 6=blocks, 7=last seen
     const addrShort = j.wallet_full.length > 26 ? j.wallet_full.slice(0, 12) + '…' + j.wallet_full.slice(-12) : j.wallet_full;
     tbody.innerHTML = `<tr>
       <td style="font-family:monospace;">${addrShort}</td>
+      <td><span style="color:var(--text-sub);">&#8212;</span></td>
       <td>${workerCell}</td>
+      <td><span style="color:var(--text-sub);">&#8212;</span></td>
       <td><span style="color:var(--text-sub);">&#8212;</span></td>
       <td>${hrStr}</td>
       <td style="text-align:center;"><span style="color:var(--text-sub);">&#8212;</span></td>
@@ -1808,18 +1812,18 @@ function _applyMinerPatch(j) {
     </tr>`;
   } else {
     // Find the matching row by full address (title attr) and patch hashrate + worker name
-    // Column layout: 0=address, 1=worker, 2=difficulty, 3=hashrate, 4=blocks, 5=last seen
+    // Column layout: 0=address, 1=port, 2=worker, 3=ip, 4=difficulty, 5=hashrate, 6=blocks, 7=last seen
     tbody.querySelectorAll('tr').forEach(tr => {
       const addrTd  = tr.querySelector('td:first-child');
       const fullAddr = addrTd ? (addrTd.title || addrTd.textContent).trim() : '';
       if (!fullAddr || j.wallet_full.toLowerCase() !== fullAddr.toLowerCase()) return;
-      const wTd = tr.cells.length >= 2 ? tr.cells[1] : null;
+      const wTd = tr.cells.length >= 3 ? tr.cells[2] : null;
       const rowWorker = wTd
         ? (wTd.querySelector('span[style*="font-weight:500"]')?.textContent || '').trim()
         : '';
       const localWorker = j.worker_name ?? '';
       if (rowWorker && localWorker && rowWorker !== localWorker) return;
-      if (tr.cells.length >= 4) tr.cells[3].textContent = hrStr;
+      if (tr.cells.length >= 6) tr.cells[5].textContent = hrStr;
       if (localWorker && wTd && !wTd.querySelector('span[style*="font-weight:500"]')) {
         wTd.innerHTML = `<span style="color:var(--text);font-weight:500;">${localWorker}</span>`;
       }
@@ -2388,7 +2392,7 @@ function _updateWorkersTable(miners) {
   const note  = document.getElementById('workers-note');
   if (!tbody) return;
   if (!miners || miners.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-sub);padding:16px 10px;">No workers active in the last 24 hours.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--text-sub);padding:16px 10px;">No workers active in the last 24 hours.</td></tr>`;
     return;
   }
   if (note) note.style.display = 'none';
@@ -2396,11 +2400,15 @@ function _updateWorkersTable(miners) {
     const hrStr  = formatHashrate(m.hashrate_mhs) ?? '—';
     const addrShort = m.address && m.address.length > 26
       ? m.address.slice(0, 12) + '…' + m.address.slice(-12) : (m.address || '—');
+    const portCell = m.port
+      ? `<span style="color:var(--text-sub);font-family:monospace;font-size:12px;">:${m.port}</span>`
+      : `<span style="color:var(--text-sub);">—</span>`;
     const workerCell = m.worker
       ? `<span style="color:var(--text);font-weight:500;">${m.worker}</span>`
-      : m.ip
-        ? `<span style="color:var(--text-sub);font-size:12px;font-family:monospace;" title="No worker name configured — showing IP">${m.ip}</span>`
-        : `<span style="color:var(--text-sub);">—</span>`;
+      : `<span style="color:var(--text-sub);">—</span>`;
+    const ipCell = m.ip
+      ? `<span style="color:var(--text-sub);font-family:monospace;font-size:12px;" title="Docker bridge IP — all LAN miners appear as 172.18.0.1">${m.ip}</span>`
+      : `<span style="color:var(--text-sub);">—</span>`;
     const diffVal = m.difficulty > 0
       ? m.difficulty.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 4})
       : '<span style="color:var(--text-sub);">—</span>';
@@ -2410,7 +2418,9 @@ function _updateWorkersTable(miners) {
       : `<span style="color:var(--text-sub);">—</span>`;
     return `<tr>
       <td title="${m.address}" style="font-family:monospace;cursor:help;">${addrShort}</td>
+      <td>${portCell}</td>
       <td>${workerCell}</td>
+      <td>${ipCell}</td>
       <td style="color:var(--text-muted);font-variant-numeric:tabular-nums;">${diffVal}</td>
       <td>${hrStr}</td>
       <td style="text-align:center;">${blkCell}</td>
