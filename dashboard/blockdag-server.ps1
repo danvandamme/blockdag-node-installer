@@ -1,12 +1,12 @@
 # BlockDAG Dashboard Server (PowerShell — no installs required)
-# Run:  powershell -ExecutionPolicy Bypass -File C:\blockdag\dashboard\blockdag-server.ps1
+# Run:  powershell -ExecutionPolicy Bypass -File "C:\blockdag node\dashboard\blockdag-server.ps1"
 # Open: http://localhost:8088
 
 $PORT       = 8088
 $RPC_URL    = "http://localhost:38131"
-$NODE1_DATA = "C:\blockdag\data\node1"
-$NODE2_DATA = "C:\blockdag\data\node2"
-$BACKUP_DIR = "C:\blockdag\data-restore\backups"
+$NODE1_DATA = "C:\blockdag node\chain-data\node1"
+$NODE2_DATA = "C:\blockdag node\chain-data\node2"
+$BACKUP_DIR = "C:\blockdag node\data-restore\backups"
 $DASH_FILE  = Join-Path $PSScriptRoot "blockdag-dashboard.html"
 $CONTAINERS = @("bdag-miner-node-1","bdag-miner-node-2","asic-pool","rpc-failover","pool-db")
 

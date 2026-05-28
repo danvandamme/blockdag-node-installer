@@ -4,13 +4,13 @@
 #   2. BlockDAG-Dashboard - start dashboard server at login
 #
 # Run once from an Administrator PowerShell:
-#   powershell -ExecutionPolicy Bypass -File C:\blockdag\dashboard\setup-tasks.ps1
+#   powershell -ExecutionPolicy Bypass -File "C:\blockdag node\dashboard\setup-tasks.ps1"
 
 $ErrorActionPreference = "Stop"
 
-$blockdagDir  = "C:\blockdag\dashboard"
-$backupScript = "C:\blockdag\dashboard\blockdag-backup.ps1"
-$serverScript = "C:\blockdag\dashboard\blockdag-dashboard-server.py"
+$blockdagDir  = "C:\blockdag node\dashboard"
+$backupScript = "C:\blockdag node\dashboard\blockdag-backup.ps1"
+$serverScript = "C:\blockdag node\dashboard\blockdag-dashboard-server.py"
 $psExe        = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 
 # Locate python.exe (avoid Windows Store stub)

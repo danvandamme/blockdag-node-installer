@@ -8,11 +8,11 @@
 
 param([int]$Schedule = 1)
 
-$NODE1_DATA   = "C:\blockdag\data\node1"
-$NODE2_DATA   = "C:\blockdag\data\node2"
-$BACKUP_DIR   = "C:\blockdag\data-restore\backups"
-$LOG_FILE     = "C:\blockdag\data-restore\backup.log"
-$CONFIG_FILE  = "C:\blockdag\dashboard\backup-config.json"
+$NODE1_DATA   = "C:\blockdag node\chain-data\node1"
+$NODE2_DATA   = "C:\blockdag node\chain-data\node2"
+$BACKUP_DIR   = "C:\blockdag node\data-restore\backups"
+$LOG_FILE     = "C:\blockdag node\data-restore\backup.log"
+$CONFIG_FILE  = "C:\blockdag node\dashboard\backup-config.json"
 
 $retainKey = if ($Schedule -eq 2) { "retain_copies_2" } else { "retain_copies_1" }
 $RETAIN = 12
