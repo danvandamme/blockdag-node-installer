@@ -1086,7 +1086,8 @@ function openConfigModal() {
     setv('cfg-pg-db',   data.POSTGRES_DB);
     setv('cfg-pool-fee',  data.POOL_FEE_PERCENTAGE);
     setv('cfg-pool-diff', data.POOL_STARTING_PDIFF);
-    if (data.POOL_STARTING_PDIFF != null) set('s-pool-diff', data.POOL_STARTING_PDIFF);
+    if (data.POOL_STARTING_PDIFF != null)
+      set('s-pool-diff', Math.round(parseFloat(data.POOL_STARTING_PDIFF) * 65536).toLocaleString());
     setv('cfg-pool-port', data.POOL_PORT);
     setv('cfg-pool-pass', data.BDAG_MINER_POOL_PASSWORD);
     setv('cfg-node-cache',    data.NODE_CACHE_MB);
@@ -1730,7 +1731,8 @@ async function fetchPoolStats() {
 
     set('p-blocks-total', j.total_blocks ?? 0);
 
-    if (j.starting_pdiff != null) set('s-pool-diff', j.starting_pdiff);
+    if (j.starting_pdiff != null)
+      set('s-pool-diff', Math.round(j.starting_pdiff * 65536).toLocaleString());
 
     const b = j.blocks ?? {};
     const mature   = b.MATURE?.count   ?? 0;
@@ -2445,8 +2447,11 @@ function _updateWorkersTable(miners) {
     const ipCell = m.ip
       ? `<span style="color:var(--text-sub);font-family:monospace;font-size:12px;" title="Docker bridge IP — all LAN miners appear as 172.18.0.1">${m.ip}</span>`
       : `<span style="color:var(--text-sub);">—</span>`;
-    const diffVal = m.difficulty > 0
-      ? m.difficulty.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 4})
+    // Pool sends stratum difficulty (e.g. 9.9); internally × 65 536 = work units
+    // Miner firmware typically displays the work-unit value, so we match that.
+    const diffWork = m.difficulty > 0 ? Math.round(m.difficulty * 65536) : 0;
+    const diffVal = diffWork > 0
+      ? diffWork.toLocaleString()
       : '<span style="color:var(--text-sub);">—</span>';
     const blkCount = m.blocks_found || 0;
     const blkCell  = blkCount > 0
