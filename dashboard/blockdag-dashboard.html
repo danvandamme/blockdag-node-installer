@@ -3676,8 +3676,8 @@ async function applyUpdate() {
       document.getElementById('upd-current').textContent = d.to;
       document.getElementById('upd-btn-apply').style.display = 'none';
       if (d.restart_required) {
-        document.getElementById('upd-btn-restart').style.display = '';
-        _updStatus(msg + '\nServer restart required to apply new server version.', d.errors ? '' : 'ok');
+        _updStatus(msg + '\nRestarting server to apply update…', d.errors ? '' : 'ok');
+        setTimeout(restartNodeServer, 800);
       }
     }
   } catch(e) {
