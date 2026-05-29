@@ -1289,27 +1289,38 @@ class Handler(BaseHTTPRequestHandler):
                       "WHERE last_active > NOW() - INTERVAL '24 hours'")
             active_miners = int(am[0][0]) if am else 0
 
-            # ── 5 most recent blocks ──────────────────────────────────────────
+            # ── 20 most recent blocks (deduplicated by hash) ──────────────────
+            # DISTINCT ON (b.hash) with a subquery ensures each block hash appears
+            # only once even if the blocks table stores multiple rows per hash
+            # (e.g. one row per status transition: PENDING → MATURE → PAID).
+            # The inner ORDER BY hash, created_at DESC picks the latest status;
+            # the outer ORDER BY created_at DESC + LIMIT 20 returns the 20 newest.
             if wallet_filter:
                 rb = psql(
-                    "SELECT b.hash, b.height, b.status, "
-                    "to_char(b.created_at,'MM-DD HH24:MI'), "
-                    "b.created_at, c.miner_address, "
-                    "SUM(c.amount) AS miner_reward "
-                    "FROM blocks b "
-                    "JOIN credits c ON c.block_hash = b.hash "
-                    f"WHERE LOWER(c.miner_address) = '{wallet_filter}' "
-                    "GROUP BY b.hash, b.height, b.status, b.created_at, c.miner_address "
-                    "ORDER BY b.created_at DESC LIMIT 20")
+                    "SELECT hash, height, status, fmt_time, created_at, finder, reward FROM ("
+                    "  SELECT DISTINCT ON (b.hash) "
+                    "    b.hash, b.height, b.status, "
+                    "    to_char(b.created_at,'MM-DD HH24:MI') AS fmt_time, "
+                    "    b.created_at, c.miner_address AS finder, "
+                    "    c.amount AS reward "
+                    "  FROM blocks b "
+                    "  JOIN credits c ON c.block_hash = b.hash "
+                    f" WHERE LOWER(c.miner_address) = '{wallet_filter}' "
+                    "  ORDER BY b.hash, b.created_at DESC"
+                    ") sub ORDER BY created_at DESC LIMIT 20")
             else:
                 rb = psql(
-                    "SELECT b.hash, b.height, b.status, "
-                    "to_char(b.created_at,'MM-DD HH24:MI'), "
-                    "b.created_at, "
-                    "(SELECT miner_address FROM credits "
-                    " WHERE block_hash = b.hash LIMIT 1), "
-                    "b.reward "
-                    "FROM blocks b ORDER BY b.created_at DESC LIMIT 20")
+                    "SELECT hash, height, status, fmt_time, created_at, finder, reward FROM ("
+                    "  SELECT DISTINCT ON (b.hash) "
+                    "    b.hash, b.height, b.status, "
+                    "    to_char(b.created_at,'MM-DD HH24:MI') AS fmt_time, "
+                    "    b.created_at, "
+                    "    (SELECT miner_address FROM credits"
+                    "     WHERE block_hash = b.hash LIMIT 1) AS finder, "
+                    "    b.reward "
+                    "  FROM blocks b "
+                    "  ORDER BY b.hash, b.created_at DESC"
+                    ") sub ORDER BY created_at DESC LIMIT 20")
 
             # Finder from pool logs (has wallet.workername) or fall back to credits address
             # r[4] is the raw psql TIMESTAMP string — parse it to datetime for comparison
