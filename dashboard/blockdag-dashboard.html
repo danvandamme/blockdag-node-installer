@@ -126,6 +126,8 @@
     .section-drag-handle:hover { opacity:.85; cursor:grabbing; }
     #adv-sortable > .sortable-ghost { opacity:.35; }
     #adv-sortable > .sortable-drag { box-shadow:0 8px 28px rgba(0,0,0,.18); border-radius:12px; }
+    /* Data Tables floating panel */
+    #tables-panel-body > .section { margin-bottom:0; }
   </style>
 </head>
 <body>
@@ -157,6 +159,7 @@
     <button onclick="manualRefresh()"><i class="ti ti-refresh"></i> Refresh</button>
     <button onclick="openConfigModal()" title="Configuration"><i class="ti ti-settings"></i> Config</button>
     <button onclick="openUpdateModal()" title="Check for software updates" id="btn-update" style="color:#10b981;border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.08);"><i class="ti ti-arrow-up"></i> Update</button>
+    <button onclick="openTablesPanel()" title="Data tables: Payout · Blocks · Peers · Workers" id="btn-tables" style="color:#0e9f6e;border-color:rgba(14,159,110,0.4);background:rgba(14,159,110,0.08);"><i class="ti ti-table"></i> Tables</button>
     <button onclick="toggleDark()" id="dark-btn" title="Toggle dark mode"><i class="ti ti-moon" id="dark-icon"></i></button>
   </div>
 </div>
@@ -818,10 +821,22 @@
 </div>
 
 
-<!-- Payout History section (full width, collapsible) -->
-<div id="panel-payout-history" class="section panel-full" style="margin-bottom:12px;">
+</div><!-- /adv-sortable -->
+
+</div><!-- /adv-view -->
+
+<!-- ── Data Tables floating panel ─────────────────────────────────── -->
+<div id="tables-panel" style="display:none;position:fixed;top:80px;right:20px;width:900px;max-width:calc(100vw - 40px);height:72vh;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22);flex-direction:column;overflow:hidden;z-index:50;resize:both;">
+  <div id="tables-panel-handle" style="display:flex;align-items:center;gap:8px;padding:10px 16px;cursor:move;user-select:none;border-bottom:1px solid var(--border);background:var(--bg-metric);border-radius:12px 12px 0 0;flex-shrink:0;">
+    <i class="ti ti-table" style="color:var(--text-muted);font-size:16px;"></i>
+    <strong style="font-size:14px;">Data Tables</strong>
+    <span style="font-size:12px;color:var(--text-muted);margin-left:4px;">&mdash; Payout History &middot; Recent Blocks &middot; Peers &middot; Workers</span>
+    <button onclick="closeTablesPanel()" style="margin-left:auto;padding:4px 10px;" title="Close panel"><i class="ti ti-x"></i></button>
+  </div>
+  <div id="tables-panel-body" style="overflow-y:auto;padding:12px;flex:1;display:flex;flex-direction:column;gap:8px;min-height:0;">
+<div id="panel-payout-history" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePayoutHistory()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-receipt"></i> Payout History</p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-receipt"></i> Payout History</p>
     <i class="ti ti-chevron-down" id="payout-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="payout-history-body" style="display:none;margin-top:14px;">
@@ -843,10 +858,9 @@
   </div>
 </div>
 
-<!-- Recent Blocks (full width, collapsible) -->
-<div id="panel-recent-blocks" class="section panel-full" style="margin-bottom:12px;">
+<div id="panel-recent-blocks" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleRecentBlocks()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-cube"></i> Recent Blocks <span id="recent-blocks-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-cube"></i> Recent Blocks <span id="recent-blocks-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="recent-blocks-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="recent-blocks-body" style="display:none;margin-top:14px;">
@@ -872,10 +886,9 @@
   </div>
 </div>
 
-<!-- Connected Peers (full width, collapsible) -->
-<div id="panel-connected-peers" class="section panel-full" style="margin-bottom:12px;">
+<div id="panel-connected-peers" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleConnectedPeers()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-plug-connected"></i> Connected Peers <span id="connected-peers-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-plug-connected"></i> Connected Peers <span id="connected-peers-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="connected-peers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="connected-peers-body" style="display:none;margin-top:14px;">
@@ -904,10 +917,9 @@
   </div>
 </div>
 
-<!-- Peer Manager (full width, collapsible) -->
-<div id="panel-peer-manager" class="section panel-full" style="margin-bottom:12px;">
+<div id="panel-peer-manager" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePeerManager()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-list-check"></i> Peer Manager <span id="peer-manager-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-list-check"></i> Peer Manager <span id="peer-manager-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="peer-manager-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="peer-manager-body" style="display:none;margin-top:14px;">
@@ -967,10 +979,9 @@
   </div>
 </div>
 
-<!-- Workers / Miners section (full width, collapsible) -->
-<div id="panel-workers" class="section panel-full" style="margin-bottom:12px;">
+<div id="panel-workers" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleWorkers()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-users"></i> Workers / Miners</p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-users"></i> Workers / Miners</p>
     <i class="ti ti-chevron-down" id="workers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="workers-body" style="display:none;margin-top:14px;">
@@ -996,10 +1007,8 @@
     </div>
   </div>
 </div><!-- /panel-workers -->
-
-</div><!-- /adv-sortable -->
-
-</div><!-- /adv-view -->
+  </div>
+</div>
 
 <!-- log viewer modal -->
 <div id="log-modal" class="log-modal-bg" style="display:none;" onclick="if(event.target===this)closeLogs()">
@@ -3560,8 +3569,6 @@ const PANEL_IDS = [
   'panel-node-control', 'panel-containers', 'panel-resources',
   'panel-machine', 'panel-wallet',
   'panel-backup', 'panel-maintenance', 'panel-alerts', 'panel-watchdog',
-  'panel-payout-history', 'panel-recent-blocks', 'panel-connected-peers',
-  'panel-peer-manager', 'panel-workers'
 ];
 
 function initSortable() {
@@ -3592,6 +3599,77 @@ function initSortable() {
     }
   });
 }
+
+// ── Data Tables floating panel ────────────────────────────────────────────
+(function() {
+  let _tDrag = false, _tSX, _tSY, _tSL, _tST;
+
+  function _saveTablesState() {
+    const p = document.getElementById('tables-panel');
+    if (!p) return;
+    localStorage.setItem('bdag-tables-panel', JSON.stringify({
+      open:   p.style.display === 'flex',
+      left:   p.style.left   || '',
+      top:    p.style.top    || '',
+      right:  p.style.right  || '',
+      width:  p.offsetWidth  + 'px',
+      height: p.offsetHeight + 'px',
+    }));
+  }
+
+  window.openTablesPanel = function() {
+    const p = document.getElementById('tables-panel');
+    if (!p) return;
+    p.style.display = 'flex';
+    _saveTablesState();
+  };
+
+  window.closeTablesPanel = function() {
+    const p = document.getElementById('tables-panel');
+    if (!p) return;
+    p.style.display = 'none';
+    _saveTablesState();
+  };
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const p = document.getElementById('tables-panel');
+    const h = document.getElementById('tables-panel-handle');
+    if (!p || !h) return;
+
+    // drag
+    h.addEventListener('mousedown', function(e) {
+      if (e.target.closest('button')) return;
+      _tDrag = true;
+      _tSX = e.clientX; _tSY = e.clientY;
+      const r = p.getBoundingClientRect();
+      _tSL = r.left; _tST = r.top;
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', function(e) {
+      if (!_tDrag) return;
+      p.style.left   = Math.max(0, _tSL + e.clientX - _tSX) + 'px';
+      p.style.top    = Math.max(0, _tST + e.clientY - _tSY) + 'px';
+      p.style.right  = 'auto';
+    });
+    document.addEventListener('mouseup', function() {
+      if (!_tDrag) return;
+      _tDrag = false;
+      document.body.style.userSelect = '';
+      _saveTablesState();
+    });
+
+    // restore saved state
+    try {
+      const s = JSON.parse(localStorage.getItem('bdag-tables-panel') || '{}');
+      if (s.width)  p.style.width  = s.width;
+      if (s.height) p.style.height = s.height;
+      if (s.left) { p.style.left = s.left; p.style.right = 'auto'; }
+      if (s.top)    p.style.top  = s.top;
+      if (s.open)   p.style.display = 'flex';
+    } catch(e) {}
+  });
+})();
 
 document.addEventListener('DOMContentLoaded', initSortable);
 
