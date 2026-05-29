@@ -375,6 +375,9 @@ def _parse_pool_workers():
 
     ten_min_ago  = log_now - timedelta(minutes=10)
     five_min_ago = log_now - timedelta(minutes=5)
+    one_hour_ago = log_now - timedelta(hours=1)
+
+    shares_1h = 0   # total accepted share events in the last hour (for dashboard stat)
 
     # ── Main scan ─────────────────────────────────────────────────────────────
     for line in lines:
@@ -449,11 +452,15 @@ def _parse_pool_workers():
             wallet = share.group(2)   # always the bare wallet address
             # Total accepted events (all time) — shown in the Shares column
             wallet_shares_total[wallet] = wallet_shares_total.get(wallet, 0) + 1
-            # Actual share count including suppressed — used for hashrate fallback
-            if ts_dt and ts_dt >= ten_min_ago:
-                cnt_m  = _POOL_SUPPRESSED_CNT_RE.search(line)
-                actual = (int(cnt_m.group(1)) + 1) if cnt_m else 1
-                wallet_shares_10m[wallet] = wallet_shares_10m.get(wallet, 0) + actual
+            if ts_dt:
+                # 1-hour share count — used as dashboard "Shares (last hr)" stat
+                if ts_dt >= one_hour_ago:
+                    shares_1h += 1
+                # Actual share count including suppressed — used for hashrate fallback
+                if ts_dt >= ten_min_ago:
+                    cnt_m  = _POOL_SUPPRESSED_CNT_RE.search(line)
+                    actual = (int(cnt_m.group(1)) + 1) if cnt_m else 1
+                    wallet_shares_10m[wallet] = wallet_shares_10m.get(wallet, 0) + actual
             continue
 
         vd_m = _POOL_VARDIFF_RE.search(line)
@@ -506,7 +513,10 @@ def _parse_pool_workers():
             w.pop("_last_pushdif_dt", None)
             result.append(w)
 
-    return sorted(result, key=lambda x: x.get("last_active") or "", reverse=True)
+    return {
+        "miners":   sorted(result, key=lambda x: x.get("last_active") or "", reverse=True),
+        "shares_1h": shares_1h,
+    }
 
 
 def _parse_block_finders(block_times):
@@ -1449,7 +1459,9 @@ class Handler(BaseHTTPRequestHandler):
             blocks_by_worker = _blocks_per_worker_from_logs()
 
             # ── Per-worker list from pool logs (shows real worker names + diff) ─
-            miners_list = _parse_pool_workers()
+            _pw         = _parse_pool_workers()
+            miners_list = _pw["miners"]
+            _log_shares_1h = _pw.get("shares_1h", 0)
             # Count distinct log-tracked workers per wallet so the DB fallback
             # doesn't assign the wallet-level total to every individual worker row.
             _wallet_worker_count: dict = {}
@@ -1548,6 +1560,14 @@ class Handler(BaseHTTPRequestHandler):
                 starting_pdiff = float(_env_read().get("POOL_STARTING_PDIFF") or 0) or None
             except Exception:
                 starting_pdiff = None
+
+            # ── Fallbacks for stats that require a 'shares' DB table ─────────
+            # This pool's DB schema has no shares table — derive from pool logs.
+            if hashrate_mhs is None and miners_list:
+                # Sum of per-worker VARDIFF-based hashrates (already calculated)
+                hashrate_mhs = round(sum(w.get("hashrate_mhs", 0) for w in miners_list), 6)
+            if shares_accepted == 0 and _log_shares_1h > 0:
+                shares_accepted = _log_shares_1h
 
             self._json({
                 "total_blocks":   total_blocks,
