@@ -1294,19 +1294,22 @@ class Handler(BaseHTTPRequestHandler):
                 rb = psql(
                     "SELECT b.hash, b.height, b.status, "
                     "to_char(b.created_at,'MM-DD HH24:MI'), "
-                    "b.created_at, c.miner_address "
+                    "b.created_at, c.miner_address, "
+                    "SUM(c.amount) AS miner_reward "
                     "FROM blocks b "
                     "JOIN credits c ON c.block_hash = b.hash "
                     f"WHERE LOWER(c.miner_address) = '{wallet_filter}' "
-                    "ORDER BY b.created_at DESC LIMIT 5")
+                    "GROUP BY b.hash, b.height, b.status, b.created_at, c.miner_address "
+                    "ORDER BY b.created_at DESC LIMIT 20")
             else:
                 rb = psql(
                     "SELECT b.hash, b.height, b.status, "
                     "to_char(b.created_at,'MM-DD HH24:MI'), "
                     "b.created_at, "
                     "(SELECT miner_address FROM credits "
-                    " WHERE block_hash = b.hash LIMIT 1) "
-                    "FROM blocks b ORDER BY b.created_at DESC LIMIT 5")
+                    " WHERE block_hash = b.hash LIMIT 1), "
+                    "b.reward "
+                    "FROM blocks b ORDER BY b.created_at DESC LIMIT 20")
 
             # Finder from pool logs (has wallet.workername) or fall back to credits address
             # r[4] is the raw psql TIMESTAMP string — parse it to datetime for comparison
@@ -1330,6 +1333,11 @@ class Handler(BaseHTTPRequestHandler):
                 h           = str(r[0])
                 finder_log  = finders_log.get(h)
                 finder_db   = str(r[5]) if len(r) >= 6 and r[5] else None
+                raw_reward = r[6] if len(r) >= 7 and r[6] else None
+                try:
+                    reward_bdag = round(int(raw_reward) / 1e18, 4) if raw_reward else None
+                except (ValueError, TypeError):
+                    reward_bdag = None
                 recent.append({
                     "hash":   h,
                     "height": int(r[1]),
@@ -1337,6 +1345,7 @@ class Handler(BaseHTTPRequestHandler):
                     "time":   r[3],
                     "ts":     str(r[4]) if len(r) >= 5 and r[4] else None,
                     "finder": finder_log or finder_db,
+                    "reward": reward_bdag,
                 })
 
             # ── Pool health from container logs ───────────────────────────────

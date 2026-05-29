@@ -626,11 +626,12 @@
             <th>Block Hash</th>
             <th>Height</th>
             <th>Status</th>
+            <th>Reward</th>
             <th>Time <span style="font-weight:400;font-size:10px;color:var(--text-sub);">server / local</span></th>
           </tr>
         </thead>
         <tbody id="recent-blocks-tbody">
-          <tr><td colspan="5" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; refreshes with pool stats.</td></tr>
+          <tr><td colspan="6" style="color:var(--text-sub);padding:16px 10px;">No data yet &mdash; refreshes with pool stats.</td></tr>
         </tbody>
       </table>
     </div>
@@ -737,6 +738,12 @@
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleWorkers()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-users"></i> Workers / Miners</p>
     <i class="ti ti-chevron-down" id="workers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
+  </div>
+  <div id="wallet-filter-banner" style="display:none;align-items:center;gap:10px;margin-top:10px;padding:7px 12px;background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.25);border-radius:8px;font-size:13px;">
+    <i class="ti ti-filter" style="color:#4a9eff;font-size:14px;"></i>
+    <span style="color:var(--text-muted);">Showing pool stats for:</span>
+    <span id="wallet-filter-label" style="font-family:monospace;color:#4a9eff;"></span>
+    <button onclick="_setWalletFilter(null);event.stopPropagation();" style="margin-left:auto;padding:3px 10px;background:rgba(74,158,255,0.12);border:1px solid rgba(74,158,255,0.3);border-radius:5px;color:#4a9eff;cursor:pointer;font-size:12px;">✕ Back to pool-wide</button>
   </div>
   <div id="workers-body" style="display:none;margin-top:14px;">
     <p class="note" id="workers-note" style="display:none;margin-bottom:8px;"></p>
@@ -1758,10 +1765,25 @@ async function fetchResources() {
   } catch(e) { /* non-critical */ }
 }
 
+let _activeWallet = null;
+
+function _setWalletFilter(addr) {
+  _activeWallet = addr || null;
+  const banner = document.getElementById('wallet-filter-banner');
+  const label  = document.getElementById('wallet-filter-label');
+  if (banner) banner.style.display = _activeWallet ? 'flex' : 'none';
+  if (label && _activeWallet) {
+    label.textContent = _activeWallet.slice(0, 10) + '…' + _activeWallet.slice(-8);
+    label.title = _activeWallet;
+  }
+  fetchPoolStats();
+}
+
 async function fetchPoolStats() {
   if (!IS_SERVER) return;
   try {
-    const r = await fetch('/poolstats');
+    const url = _activeWallet ? `/poolstats?wallet=${encodeURIComponent(_activeWallet)}` : '/poolstats';
+    const r = await fetch(url);
     const j = await r.json();
     if (j.error) { badge('p-health', 'DB error', 'err'); console.error('[poolstats]', j.error); return; }
 
@@ -2509,7 +2531,7 @@ function _updateRecentBlocks(recent) {
   if (ts)    ts.textContent    = recent.length ? 'Updated: ' + new Date().toLocaleTimeString() : '';
 
   if (!recent || !recent.length) {
-    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-sub);padding:16px 10px;">No blocks found yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-sub);padding:16px 10px;">No blocks found yet.</td></tr>`;
     return;
   }
 
@@ -2538,6 +2560,11 @@ function _updateRecentBlocks(recent) {
       }
     }
 
+    // Reward cell
+    const rewardCell = b.reward != null
+      ? `<span style="color:#4caf70;font-size:12px;font-variant-numeric:tabular-nums;">${b.reward.toFixed(4)}<span style="color:var(--text-sub);font-size:10px;margin-left:3px;">BDAG</span></span>`
+      : `<span style="color:var(--text-sub);">—</span>`;
+
     return `<tr>
       <td style="white-space:nowrap;">${finderCell}</td>
       <td style="white-space:nowrap;">
@@ -2552,6 +2579,7 @@ function _updateRecentBlocks(recent) {
       </td>
       <td style="color:var(--text-muted);white-space:nowrap;">#${(b.height||0).toLocaleString()}</td>
       <td style="white-space:nowrap;"><span class="badge badge-${cls[b.status]||'warn'}" style="font-size:10px;padding:2px 6px;">${b.status}</span></td>
+      <td style="white-space:nowrap;">${rewardCell}</td>
       <td style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${b.time || '—'}${(()=>{ const lt = _toLocalTime(b.ts); return lt ? `<br><span style="color:var(--text-sub);font-size:10px;">${lt}</span>` : ''; })()}</td>
     </tr>`;
   }).join('');
@@ -2596,8 +2624,16 @@ function _updateWorkersTable(miners) {
     const blkCell  = blkCount > 0
       ? `<span style="color:#4caf70;font-weight:600;">${blkCount}</span>`
       : `<span style="color:var(--text-sub);">—</span>`;
+    const addrCell = m.address ? `<span style="display:inline-flex;align-items:center;gap:5px;">
+        <span style="font-family:monospace;cursor:pointer;color:var(--text);"
+              title="${m.address}&#10;Click to copy"
+              onclick="event.stopPropagation();navigator.clipboard.writeText('${m.address}').then(()=>{this.style.color='#4caf70';setTimeout(()=>this.style.color='',1200)})">${addrShort}</span>
+        <span style="cursor:pointer;color:var(--text-sub);font-size:13px;line-height:1;"
+              title="Filter pool stats to this wallet"
+              onclick="event.stopPropagation();_setWalletFilter('${m.address}')">&#x1F50D;</span>
+      </span>` : '—';
     return `<tr>
-      <td title="${m.address}" style="font-family:monospace;cursor:help;">${addrShort}</td>
+      <td style="white-space:nowrap;">${addrCell}</td>
       <td>${portCell}</td>
       <td>${workerCell}</td>
       <td>${ipCell}</td>
