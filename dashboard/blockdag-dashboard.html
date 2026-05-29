@@ -116,10 +116,12 @@
     .modal-cmd { background: var(--bg-metric); border-radius: 6px; padding: 12px; font-family: monospace; font-size: 14px; word-break: break-all; margin-bottom: 12px; }
     .modal-close { float: right; }
     /* ── Draggable panels ─────────────────────────── */
-    .sortable-panel { margin-bottom: 12px; }
-    .panel-drag-bar { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.06em; padding:4px 10px; margin-bottom:6px; background:var(--bg-metric); border:1px solid var(--border); border-radius:7px; cursor:grab; user-select:none; transition:background .15s; }
-    .panel-drag-bar:hover { background:var(--border); }
-    .panel-drag-bar:active { cursor:grabbing; }
+    #adv-sortable { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; align-items:start; }
+    #adv-sortable > .section { margin-bottom:0; }
+    .panel-wide { grid-column:span 2; }
+    .panel-full { grid-column:span 3; }
+    @media (max-width:1100px) { #adv-sortable { grid-template-columns:1fr 1fr; } .panel-full { grid-column:span 2; } }
+    @media (max-width:700px)  { #adv-sortable { grid-template-columns:1fr; } .panel-wide, .panel-full { grid-column:span 1; } }
     .section-drag-handle { cursor:grab; font-size:15px; opacity:.45; transition:opacity .15s; flex-shrink:0; }
     .section-drag-handle:hover { opacity:.85; cursor:grabbing; }
     #adv-sortable > .sortable-ghost { opacity:.35; }
@@ -271,14 +273,10 @@
 
 <div id="adv-sortable">
 
-<div id="panel-node-stats" class="sortable-panel">
-<div class="panel-drag-bar drag-handle" title="Drag to reorder"><i class="ti ti-grip-horizontal"></i> Nodes &amp; Pool Stats</div>
-<!-- Two-column row: [Node 1 + Node 2 + Chain info] | [Pool stats] -->
-<div id="node-panels-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:0;align-items:start;">
 
   <!-- Left: combined nodes card -->
-  <div class="section" style="margin-bottom:0;">
-    <p class="section-title"><i class="ti ti-server-2"></i> Nodes</p>
+<div id="panel-nodes" class="section panel-wide">
+    <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-server-2"></i> Nodes</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
       <!-- Node 1 -->
       <div style="background:var(--bg-metric);border:1px solid var(--border);border-radius:8px;padding:12px;">
@@ -367,9 +365,9 @@
     </div>
   </div>
 
-  <!-- Right: Pool stats card -->
-  <div class="section" style="margin-bottom:0;">
-    <p class="section-title"><i class="ti ti-pickaxe"></i> Pool stats</p>
+
+<div id="panel-pool-stats" class="section">
+    <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-pickaxe"></i> Pool stats</p>
     <div class="row">
       <span class="row-label"><i class="ti ti-activity"></i> Pool status</span>
       <span id="p-health"><span class="badge badge-warn">Checking...</span></span>
@@ -442,19 +440,10 @@
     </div>
   </div>
 
-</div><!-- end node-panels-grid -->
-</div><!-- /panel-node-stats -->
 
-<div id="panel-top-grid" class="sortable-panel">
-<div class="panel-drag-bar drag-handle" title="Drag to reorder"><i class="ti ti-grip-horizontal"></i> Node Control, Resources &amp; Settings</div>
-<!-- ── Top 3-column grid: [Node Control + Containers] | [Resources] | [Machine + Wallet] ── -->
-<div id="panels-top-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:0;align-items:start;">
 
-<!-- Column 1: Node Control + Containers -->
-<div style="display:flex;flex-direction:column;gap:12px;">
-
-<div class="section">
-  <p class="section-title"><i class="ti ti-terminal-2"></i> Node control</p>
+<div id="panel-node-control" class="section">
+  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-terminal-2"></i> Node control</p>
   <div class="ctrl-row">
     <button class="btn-green"  onclick="nodeAction('start')">  <i class="ti ti-player-play"></i>  Start</button>
     <button class="btn-red"    onclick="nodeAction('stop')">   <i class="ti ti-player-stop"></i>  Stop</button>
@@ -473,8 +462,8 @@
   <div class="ctrl-status" id="ctrl-status"></div>
 </div>
 
-<div class="section">
-  <p class="section-title"><i class="ti ti-box"></i> Containers</p>
+<div id="panel-containers" class="section">
+  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-box"></i> Containers</p>
   <div class="row" style="margin-bottom:6px;">
     <span class="row-label"><i class="ti ti-switch"></i> HAProxy active backend</span>
     <span id="haproxy-backend"><span class="badge badge-warn">&mdash;</span></span>
@@ -487,11 +476,9 @@
   <p class="note" id="container-note" style="display:none;">Container status requires the dashboard server. Run <strong>blockdag-dashboard-server.py</strong> and open http://localhost:8765</p>
 </div>
 
-</div><!-- end col-1 -->
 
-<!-- Column 2: Resources -->
-<div class="section">
-  <p class="section-title"><i class="ti ti-cpu"></i> Resources</p>
+<div id="panel-resources" class="section">
+  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-cpu"></i> Resources</p>
   <div class="row">
     <span class="row-label"><i class="ti ti-server"></i> bdag-miner-node-1</span>
     <span class="row-value" id="r-mem-node1">&mdash;</span>
@@ -532,13 +519,10 @@
     <span class="row-label"><i class="ti ti-device-floppy"></i> Backup drive free</span>
     <span id="r-backup-disk"><span class="badge badge-warn">&mdash;</span></span>
   </div>
-</div><!-- end col-2 Resources -->
 
-<!-- Column 3: Machine + Wallet stacked -->
-<div style="display:flex;flex-direction:column;gap:12px;">
 
-<div class="section">
-  <p class="section-title"><i class="ti ti-world"></i> Machine</p>
+<div id="panel-machine" class="section">
+  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-world"></i> Machine</p>
   <div class="row">
     <span class="row-label"><i class="ti ti-globe"></i> Public IP</span>
     <span class="row-value" id="m-pubip">&mdash;</span>
@@ -549,8 +533,8 @@
   </div>
 </div>
 
-<div class="section">
-  <p class="section-title"><i class="ti ti-wallet"></i> Wallet</p>
+<div id="panel-wallet" class="section">
+  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-wallet"></i> Wallet</p>
   <div class="row">
     <span class="row-label"><i class="ti ti-id"></i> Mining address</span>
     <span style="display:flex;align-items:center;gap:6px;max-width:60%;min-width:0;">
@@ -570,22 +554,13 @@
     <span class="row-label"><i class="ti ti-currency-dollar"></i> USD value</span>
     <span class="row-value" id="w-usd">&mdash;</span>
   </div>
-</div><!-- end Wallet -->
 
-</div><!-- end col-3 -->
 
-</div><!-- end panels-top-grid -->
-</div><!-- /panel-top-grid -->
 
-<div id="panel-bottom-grid" class="sortable-panel">
-<div class="panel-drag-bar drag-handle" title="Drag to reorder"><i class="ti ti-grip-horizontal"></i> Backup, Maintenance &amp; Watchdog</div>
-<!-- ── Bottom 3-column grid: Backup | Maintenance | Alerts (all collapsible) ── -->
-<div id="panels-bottom-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:0;align-items:start;">
 
-<!-- Backup (collapsible) -->
-<div class="section">
+<div id="panel-backup" class="section">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('backup')">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-database-export"></i> Backup</p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-database-export"></i> Backup</p>
     <i class="ti ti-chevron-down" id="backup-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
   </div>
   <div id="backup-section-body" style="display:none;margin-top:12px;">
@@ -688,12 +663,11 @@
   </div>
   <p class="note" style="margin-top:6px;">&#9888; Restore stops the stack and replaces all chain data. The node will re-sync from the backup point.</p>
   </div><!-- end backup-section-body -->
-</div><!-- end Backup -->
+</div>
 
-<!-- Maintenance (collapsible) -->
-<div class="section">
+<div id="panel-maintenance" class="section">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('maintenance')">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-clock-play"></i> Maintenance</p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-clock-play"></i> Maintenance</p>
     <i class="ti ti-chevron-down" id="maintenance-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
   </div>
   <div id="maintenance-section-body" style="display:none;margin-top:12px;">
@@ -736,12 +710,11 @@
   </div>
   <div class="ctrl-status" id="maint-status"></div>
   </div><!-- end maintenance-section-body -->
-</div><!-- end Maintenance -->
+</div>
 
-<!-- Alerts (collapsible) -->
-<div class="section">
+<div id="panel-alerts" class="section">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('alerts')">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-bell"></i> Alerts</p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-bell"></i> Alerts</p>
     <i class="ti ti-chevron-down" id="alerts-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
   </div>
   <div id="alerts-section-body" style="display:none;margin-top:12px;">
@@ -793,12 +766,11 @@
     </div>
   </div>
   </div><!-- end alerts-section-body -->
-</div><!-- end Alerts -->
+</div>
 
-<!-- Watchdogs (collapsible) -->
-<div class="section">
+<div id="panel-watchdog" class="section">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('watchdogs')">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-shield-check"></i> Watchdogs</p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-shield-check"></i> Watchdogs</p>
     <i class="ti ti-chevron-down" id="watchdogs-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
   </div>
   <div id="watchdogs-section-body" style="display:none;margin-top:12px;">
@@ -843,13 +815,11 @@
   <button class="btn-blue" onclick="saveWatchdogConfig()"><i class="ti ti-device-floppy"></i> Save</button>
   <div class="ctrl-status" id="wd-status"></div>
   </div><!-- end watchdogs-section-body -->
-</div><!-- end Watchdogs -->
+</div>
 
-</div><!-- end panels-bottom-grid -->
-</div><!-- /panel-bottom-grid -->
 
 <!-- Payout History section (full width, collapsible) -->
-<div id="panel-payout-history" class="section" style="margin-bottom:12px;">
+<div id="panel-payout-history" class="section panel-full" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePayoutHistory()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-receipt"></i> Payout History</p>
     <i class="ti ti-chevron-down" id="payout-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -874,7 +844,7 @@
 </div>
 
 <!-- Recent Blocks (full width, collapsible) -->
-<div id="panel-recent-blocks" class="section" style="margin-bottom:12px;">
+<div id="panel-recent-blocks" class="section panel-full" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleRecentBlocks()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-cube"></i> Recent Blocks <span id="recent-blocks-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="recent-blocks-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -903,7 +873,7 @@
 </div>
 
 <!-- Connected Peers (full width, collapsible) -->
-<div id="panel-connected-peers" class="section" style="margin-bottom:12px;">
+<div id="panel-connected-peers" class="section panel-full" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleConnectedPeers()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-plug-connected"></i> Connected Peers <span id="connected-peers-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="connected-peers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -935,7 +905,7 @@
 </div>
 
 <!-- Peer Manager (full width, collapsible) -->
-<div id="panel-peer-manager" class="section" style="margin-bottom:12px;">
+<div id="panel-peer-manager" class="section panel-full" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePeerManager()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-list-check"></i> Peer Manager <span id="peer-manager-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="peer-manager-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -998,7 +968,7 @@
 </div>
 
 <!-- Workers / Miners section (full width, collapsible) -->
-<div id="panel-workers" class="section" style="margin-bottom:12px;">
+<div id="panel-workers" class="section panel-full" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleWorkers()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-users"></i> Workers / Miners</p>
     <i class="ti ti-chevron-down" id="workers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -3586,7 +3556,10 @@ async function applyUpdate() {
 // ── Draggable panel ordering ──────────────────────────────────────────────────
 const PANEL_ORDER_KEY = 'bdag-panel-order';
 const PANEL_IDS = [
-  'panel-node-stats', 'panel-top-grid', 'panel-bottom-grid',
+  'panel-nodes', 'panel-pool-stats',
+  'panel-node-control', 'panel-containers', 'panel-resources',
+  'panel-machine', 'panel-wallet',
+  'panel-backup', 'panel-maintenance', 'panel-alerts', 'panel-watchdog',
   'panel-payout-history', 'panel-recent-blocks', 'panel-connected-peers',
   'panel-peer-manager', 'panel-workers'
 ];
