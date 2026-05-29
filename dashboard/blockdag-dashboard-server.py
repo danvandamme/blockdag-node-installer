@@ -1261,7 +1261,8 @@ class Handler(BaseHTTPRequestHandler):
                     "SELECT DISTINCT ON (p.id) "
                     "  p.tx_hash, p.amount, "
                     "  to_char(p.created_at,'MM-DD HH24:MI'), "
-                    "  COALESCE(c.miner_address, '') "
+                    "  COALESCE(c.miner_address, ''), "
+                    "  p.created_at "
                     "FROM payouts p "
                     "LEFT JOIN credits c "
                     "  ON c.amount = p.amount "
@@ -1278,6 +1279,7 @@ class Handler(BaseHTTPRequestHandler):
                             "bdag":    round(int(row[1]) / 1e18, 8),
                             "time":    str(row[2]),
                             "wallet":  str(row[3]),
+                            "ts":      str(row[4]) if len(row) >= 5 and row[4] else None,
                         })
             except Exception:
                 pass

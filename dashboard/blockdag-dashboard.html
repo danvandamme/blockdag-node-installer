@@ -601,7 +601,7 @@
             <th>Wallet</th>
             <th>Tx Hash</th>
             <th>Amount (BDAG)</th>
-            <th>Time</th>
+            <th>Time <span style="font-weight:400;font-size:10px;color:var(--text-sub);">server / local</span></th>
           </tr>
         </thead>
         <tbody id="payout-history-tbody">
@@ -2481,14 +2481,17 @@ function toggleRecentBlocks() {
   if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
 }
 
-/* Convert a raw DB timestamp (assumed UTC, e.g. "2026-05-29 14:32:15") to
- * the browser's local time string.  Returns null if the string can't be parsed. */
-function _blockLocalTime(ts) {
+/* Convert a raw DB timestamp to the browser's local HH:MM string.
+ * Handles both timezone-aware ("2026-05-29 14:32:15+02:00") and
+ * timezone-naive ("2026-05-29 14:32:15") PostgreSQL timestamp strings.
+ * Naive timestamps are assumed to be UTC. */
+function _toLocalTime(ts) {
   if (!ts) return null;
   try {
-    // PostgreSQL TIMESTAMP strings use a space separator; JS Date needs 'T'.
-    // Appending 'Z' tells the parser this is UTC.
-    const iso = ts.replace(' ', 'T').replace(/(\.\d+)?$/, 'Z');
+    // PostgreSQL uses a space before the time part; ISO 8601 needs 'T'.
+    let iso = ts.replace(' ', 'T');
+    // Only append 'Z' if there is no timezone info already (+HH:MM, -HH:MM, or Z).
+    if (!/Z$|[+-]\d{2}:\d{2}$/.test(iso)) iso += 'Z';
     const d = new Date(iso);
     if (isNaN(d.getTime())) return null;
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -2548,7 +2551,7 @@ function _updateRecentBlocks(recent) {
       </td>
       <td style="color:var(--text-muted);white-space:nowrap;">#${(b.height||0).toLocaleString()}</td>
       <td style="white-space:nowrap;"><span class="badge badge-${cls[b.status]||'warn'}" style="font-size:10px;padding:2px 6px;">${b.status}</span></td>
-      <td style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${b.time || '—'}${(()=>{ const lt = _blockLocalTime(b.ts); return lt ? `<br><span style="color:var(--text-sub);font-size:10px;">${lt}</span>` : ''; })()}</td>
+      <td style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${b.time || '—'}${(()=>{ const lt = _toLocalTime(b.ts); return lt ? `<br><span style="color:var(--text-sub);font-size:10px;">${lt}</span>` : ''; })()}</td>
     </tr>`;
   }).join('');
 }
@@ -3209,7 +3212,7 @@ function _updatePayoutHistory(history) {
                 <i class="ti ti-external-link" style="font-size:12px;"></i></a>` : ''}
       </td>
       <td style="font-family:monospace;white-space:nowrap;">${(p.bdag||0).toFixed(4)}</td>
-      <td style="color:var(--text-muted);white-space:nowrap;font-size:12px;">${p.time||'—'}</td>
+      <td style="color:var(--text-muted);white-space:nowrap;font-size:12px;">${p.time||'—'}${(()=>{ const lt = _toLocalTime(p.ts); return lt ? `<br><span style="color:var(--text-sub);font-size:10px;">${lt}</span>` : ''; })()}</td>
     </tr>`;
   }).join('');
 }
