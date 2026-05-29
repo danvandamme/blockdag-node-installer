@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BlockDAG Node Monitor</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
   <style>
     :root {
       --bg-page:    #f5f5f0; --bg-card:  #ffffff; --bg-metric: #ebebeb; --bg-input: #ffffff;
@@ -114,6 +115,15 @@
     .modal-title { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
     .modal-cmd { background: var(--bg-metric); border-radius: 6px; padding: 12px; font-family: monospace; font-size: 14px; word-break: break-all; margin-bottom: 12px; }
     .modal-close { float: right; }
+    /* ── Draggable panels ─────────────────────────── */
+    .sortable-panel { margin-bottom: 12px; }
+    .panel-drag-bar { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.06em; padding:4px 10px; margin-bottom:6px; background:var(--bg-metric); border:1px solid var(--border); border-radius:7px; cursor:grab; user-select:none; transition:background .15s; }
+    .panel-drag-bar:hover { background:var(--border); }
+    .panel-drag-bar:active { cursor:grabbing; }
+    .section-drag-handle { cursor:grab; font-size:15px; opacity:.45; transition:opacity .15s; flex-shrink:0; }
+    .section-drag-handle:hover { opacity:.85; cursor:grabbing; }
+    #adv-sortable > .sortable-ghost { opacity:.35; }
+    #adv-sortable > .sortable-drag { box-shadow:0 8px 28px rgba(0,0,0,.18); border-radius:12px; }
   </style>
 </head>
 <body>
@@ -259,8 +269,12 @@
   </div>
 </div>
 
+<div id="adv-sortable">
+
+<div id="panel-node-stats" class="sortable-panel">
+<div class="panel-drag-bar drag-handle" title="Drag to reorder"><i class="ti ti-grip-horizontal"></i> Nodes &amp; Pool Stats</div>
 <!-- Two-column row: [Node 1 + Node 2 + Chain info] | [Pool stats] -->
-<div id="node-panels-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:start;">
+<div id="node-panels-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:0;align-items:start;">
 
   <!-- Left: combined nodes card -->
   <div class="section" style="margin-bottom:0;">
@@ -428,10 +442,13 @@
     </div>
   </div>
 
-</div>
+</div><!-- end node-panels-grid -->
+</div><!-- /panel-node-stats -->
 
+<div id="panel-top-grid" class="sortable-panel">
+<div class="panel-drag-bar drag-handle" title="Drag to reorder"><i class="ti ti-grip-horizontal"></i> Node Control, Resources &amp; Settings</div>
 <!-- ── Top 3-column grid: [Node Control + Containers] | [Resources] | [Machine + Wallet] ── -->
-<div id="panels-top-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;align-items:start;">
+<div id="panels-top-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:0;align-items:start;">
 
 <!-- Column 1: Node Control + Containers -->
 <div style="display:flex;flex-direction:column;gap:12px;">
@@ -558,9 +575,12 @@
 </div><!-- end col-3 -->
 
 </div><!-- end panels-top-grid -->
+</div><!-- /panel-top-grid -->
 
+<div id="panel-bottom-grid" class="sortable-panel">
+<div class="panel-drag-bar drag-handle" title="Drag to reorder"><i class="ti ti-grip-horizontal"></i> Backup, Maintenance &amp; Watchdog</div>
 <!-- ── Bottom 3-column grid: Backup | Maintenance | Alerts (all collapsible) ── -->
-<div id="panels-bottom-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;align-items:start;">
+<div id="panels-bottom-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:0;align-items:start;">
 
 <!-- Backup (collapsible) -->
 <div class="section">
@@ -826,11 +846,12 @@
 </div><!-- end Watchdogs -->
 
 </div><!-- end panels-bottom-grid -->
+</div><!-- /panel-bottom-grid -->
 
 <!-- Payout History section (full width, collapsible) -->
-<div class="section" style="margin-bottom:12px;">
+<div id="panel-payout-history" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePayoutHistory()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-receipt"></i> Payout History</p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-receipt"></i> Payout History</p>
     <i class="ti ti-chevron-down" id="payout-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="payout-history-body" style="display:none;margin-top:14px;">
@@ -853,9 +874,9 @@
 </div>
 
 <!-- Recent Blocks (full width, collapsible) -->
-<div class="section" style="margin-bottom:12px;">
+<div id="panel-recent-blocks" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleRecentBlocks()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-cube"></i> Recent Blocks <span id="recent-blocks-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-cube"></i> Recent Blocks <span id="recent-blocks-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="recent-blocks-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="recent-blocks-body" style="display:none;margin-top:14px;">
@@ -882,9 +903,9 @@
 </div>
 
 <!-- Connected Peers (full width, collapsible) -->
-<div class="section" style="margin-bottom:12px;">
+<div id="panel-connected-peers" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleConnectedPeers()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-plug-connected"></i> Connected Peers <span id="connected-peers-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-plug-connected"></i> Connected Peers <span id="connected-peers-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="connected-peers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="connected-peers-body" style="display:none;margin-top:14px;">
@@ -914,9 +935,9 @@
 </div>
 
 <!-- Peer Manager (full width, collapsible) -->
-<div class="section" style="margin-bottom:12px;">
+<div id="panel-peer-manager" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePeerManager()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-list-check"></i> Peer Manager <span id="peer-manager-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-list-check"></i> Peer Manager <span id="peer-manager-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="peer-manager-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="peer-manager-body" style="display:none;margin-top:14px;">
@@ -977,9 +998,9 @@
 </div>
 
 <!-- Workers / Miners section (full width, collapsible) -->
-<div class="section" style="margin-bottom:12px;">
+<div id="panel-workers" class="section" style="margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleWorkers()">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-users"></i> Workers / Miners</p>
+    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-users"></i> Workers / Miners</p>
     <i class="ti ti-chevron-down" id="workers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
   </div>
   <div id="workers-body" style="display:none;margin-top:14px;">
@@ -1004,7 +1025,9 @@
       </table>
     </div>
   </div>
-</div>
+</div><!-- /panel-workers -->
+
+</div><!-- /adv-sortable -->
 
 </div><!-- /adv-view -->
 
@@ -3559,6 +3582,45 @@ async function applyUpdate() {
     btn.disabled = false; btn.innerHTML = '<i class="ti ti-download"></i> Apply Update';
   }
 }
+
+// ── Draggable panel ordering ──────────────────────────────────────────────────
+const PANEL_ORDER_KEY = 'bdag-panel-order';
+const PANEL_IDS = [
+  'panel-node-stats', 'panel-top-grid', 'panel-bottom-grid',
+  'panel-payout-history', 'panel-recent-blocks', 'panel-connected-peers',
+  'panel-peer-manager', 'panel-workers'
+];
+
+function initSortable() {
+  const container = document.getElementById('adv-sortable');
+  if (!container || typeof Sortable === 'undefined') return;
+
+  // Restore saved panel order
+  try {
+    const saved = JSON.parse(localStorage.getItem(PANEL_ORDER_KEY) || '[]');
+    if (Array.isArray(saved) && saved.length > 0) {
+      saved.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.parentNode === container) container.appendChild(el);
+      });
+    }
+  } catch (e) { /* ignore */ }
+
+  Sortable.create(container, {
+    handle: '.drag-handle',
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    dragClass:  'sortable-drag',
+    onEnd() {
+      const order = Array.from(container.children)
+        .map(el => el.id)
+        .filter(id => PANEL_IDS.includes(id));
+      localStorage.setItem(PANEL_ORDER_KEY, JSON.stringify(order));
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', initSortable);
 
 async function restartNodeServer() {
   const btn = document.getElementById('upd-btn-restart');
