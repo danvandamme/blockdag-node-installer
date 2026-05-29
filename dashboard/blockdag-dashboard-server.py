@@ -564,7 +564,7 @@ def _parse_block_finders(block_times):
         return {}
     try:
         r = subprocess.run(
-            ["docker", "logs", "--tail", "20000", "asic-pool"],
+            ["docker", "logs", "--tail", "100000", "asic-pool"],
             capture_output=True, text=True, timeout=15)
         lines = [_POOL_ANSI_RE.sub("", l) for l in (r.stdout + r.stderr).splitlines()]
     except Exception:
@@ -1511,14 +1511,18 @@ class Handler(BaseHTTPRequestHandler):
                         w["hashrate_mhs"] = hashrate_by_addr.get(w["address"].lower(), 0)
                     # else: multiple workers, no recent log shares → can't split wallet
                     # total meaningfully, leave at 0 rather than show an inflated value.
-                # Per-worker block count: prefer log-matched data (wallet.workername or
-                # bare wallet), fall back to wallet total from credits table.
-                _waddr  = w["address"].lower()
-                _wname  = (w.get("worker") or "").strip()
-                _wkey   = f"{_waddr}.{_wname}" if _wname else _waddr
-                w["blocks_found"] = (blocks_by_worker.get(_wkey)
-                                     or blocks_by_worker.get(_waddr)
-                                     or blocks_by_addr.get(_waddr, 0))
+                # Per-worker block count: log matching can only see recent blocks
+                # (--tail 20000), so use max(log_count, db_count) to ensure the
+                # authoritative credits-table total is never hidden by a partial
+                # log match that only captured a few recent blocks.
+                _waddr     = w["address"].lower()
+                _wname     = (w.get("worker") or "").strip()
+                _wkey      = f"{_waddr}.{_wname}" if _wname else _waddr
+                _log_count = (blocks_by_worker.get(_wkey)
+                              or blocks_by_worker.get(_waddr)
+                              or 0)
+                _db_count  = blocks_by_addr.get(_waddr, 0)
+                w["blocks_found"] = max(_log_count, _db_count)
 
             # ── Fall back to DB miners table if log parse returned nothing ──────
             if not miners_list:
@@ -1553,8 +1557,9 @@ class Handler(BaseHTTPRequestHandler):
                                 "accepted":     0,
                                 "rejected":     0,
                                 "hashrate_mhs": hashrate_by_addr.get(addr.lower(), 0),
-                                "blocks_found": (blocks_by_worker.get(addr.lower())
-                                                 or blocks_by_addr.get(addr.lower(), 0)),
+                                "blocks_found": max(
+                                    blocks_by_worker.get(addr.lower()) or 0,
+                                    blocks_by_addr.get(addr.lower(), 0)),
                             })
                 except Exception:
                     pass
