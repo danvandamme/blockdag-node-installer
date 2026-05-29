@@ -400,6 +400,10 @@
       <span class="row-value" id="p-total-reward">&mdash;</span>
     </div>
     <div class="row">
+      <span class="row-label"><i class="ti ti-trophy"></i> Reward per block <span style="font-size:0.8em;color:var(--text-muted);">(last 10 avg)</span></span>
+      <span class="row-value" id="p-reward-per-block">&mdash;</span>
+    </div>
+    <div class="row">
       <span class="row-label"><i class="ti ti-hourglass"></i> Pending payout</span>
       <span class="row-value" id="p-pending">&mdash;</span>
     </div>
@@ -1745,6 +1749,13 @@ async function fetchPoolStats() {
     set('p-blocks-breakdown', `${mature} / ${pending} / ${orphaned}`);
 
     set('p-total-reward', (j.total_reward_bdag ?? 0).toFixed(8) + ' BDAG');
+
+    if (j.avg_block_reward_bdag != null) {
+      const abr = j.avg_block_reward_bdag;
+      const abrStr = abr.toFixed(4) + ' BDAG'
+        + (_bdagPrice ? ' ($' + (abr * _bdagPrice).toFixed(2) + ')' : '');
+      set('p-reward-per-block', abrStr);
+    }
 
     const pc = j.pending_credits ?? {};
     set('p-pending', (pc.bdag ?? 0).toFixed(8) + ' BDAG'

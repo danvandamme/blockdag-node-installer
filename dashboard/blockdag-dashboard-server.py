@@ -1188,6 +1188,21 @@ class Handler(BaseHTTPRequestHandler):
                     total_reward += rwd
             total_blocks = sum(v["count"] for v in blocks.values())
 
+            # ── Average net reward per block (last 10 non-orphan blocks) ─────────
+            avg_block_reward_bdag = None
+            try:
+                abr = psql(
+                    "SELECT AVG(c.amount) "
+                    "FROM credits c "
+                    "JOIN blocks b ON b.hash = c.block_hash "
+                    "WHERE b.status != 'ORPHAN' "
+                    "ORDER BY c.created_at DESC "
+                    "LIMIT 10")
+                if abr and abr[0][0] is not None:
+                    avg_block_reward_bdag = round(float(abr[0][0]) / 1e18, 8)
+            except Exception:
+                pass
+
             # ── Pending credits (unpaid) ──────────────────────────────────────
             cr = psql("SELECT COUNT(*), COALESCE(SUM(amount),0) "
                       "FROM credits WHERE is_paid = FALSE")
@@ -1537,7 +1552,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({
                 "total_blocks":   total_blocks,
                 "blocks":         blocks,
-                "total_reward_bdag": round(total_reward / 1e18, 4),
+                "total_reward_bdag":    round(total_reward / 1e18, 4),
+                "avg_block_reward_bdag": avg_block_reward_bdag,
                 "pending_credits":   {"count": pending_count, "bdag": pending_bdag},
                 "payouts":           {"count": payout_count,  "bdag": payout_bdag},
                 "active_miners":  len(miners_list),
