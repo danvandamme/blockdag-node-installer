@@ -1089,6 +1089,9 @@ function openConfigModal() {
     if (data.POOL_STARTING_PDIFF != null) set('s-pool-diff', data.POOL_STARTING_PDIFF);
     setv('cfg-pool-port', data.POOL_PORT);
     setv('cfg-pool-pass', data.BDAG_MINER_POOL_PASSWORD);
+    setv('cfg-pplns-n',         data.PPLNS_N_WORK);
+    setv('cfg-block-maturity',  data.POOL_BLOCK_MATURITY);
+    setv('cfg-payout-maturity', data.POOL_PAYOUT_MATURITY);
     setv('cfg-node-cache',    data.NODE_CACHE_MB);
     setv('cfg-node-dagcache', data.NODE_DAG_CACHE);
     setv('cfg-node-bdcache',  data.NODE_BD_CACHE);
@@ -1152,6 +1155,9 @@ async function applyConfig() {
       POOL_STARTING_PDIFF:     cfg('cfg-pool-diff'),
       POOL_PORT:               cfg('cfg-pool-port'),
       BDAG_MINER_POOL_PASSWORD: cfg('cfg-pool-pass'),
+      PPLNS_N_WORK:            cfg('cfg-pplns-n'),
+      POOL_BLOCK_MATURITY:     cfg('cfg-block-maturity'),
+      POOL_PAYOUT_MATURITY:    cfg('cfg-payout-maturity'),
       NODE_CACHE_MB:           cfg('cfg-node-cache'),
       NODE_DAG_CACHE:          cfg('cfg-node-dagcache'),
       NODE_BD_CACHE:           cfg('cfg-node-bdcache'),
@@ -3353,6 +3359,31 @@ setInterval(updateUptime, 1000);
       <div>
         <label>Pool password</label>
         <input type="text" id="cfg-pool-pass" value="1234" />
+      </div>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--border);">
+      <i class="ti ti-coin"></i> Payout settings
+    </div>
+
+    <div class="config-row">
+      <div>
+        <label>PPLNS window <span style="font-size:0.8em;color:#888;">(work units)</span></label>
+        <input type="number" id="cfg-pplns-n" value="1000" step="100" min="100"
+               title="Size of the sliding work window used to split each block reward. Higher = longer history counts; lower = only very recent shares matter." />
+        <div style="font-size:0.78em;color:var(--text-muted);margin-top:2px;">default: 1000</div>
+      </div>
+      <div>
+        <label>Block maturity <span style="font-size:0.8em;color:#888;">(confirmations)</span></label>
+        <input type="number" id="cfg-block-maturity" value="10" step="1" min="1"
+               title="On-chain confirmations required before a found block is credited to miners." />
+        <div style="font-size:0.78em;color:var(--text-muted);margin-top:2px;">default: 10</div>
+      </div>
+      <div>
+        <label>Payout maturity <span style="font-size:0.8em;color:#888;">(blocks)</span></label>
+        <input type="number" id="cfg-payout-maturity" value="50" step="1" min="1"
+               title="Blocks after block maturity before the payout transaction is sent to miners." />
+        <div style="font-size:0.78em;color:var(--text-muted);margin-top:2px;">default: 50</div>
       </div>
     </div>
 
