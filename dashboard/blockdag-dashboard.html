@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BlockDAG Node Monitor</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
   <style>
     :root {
       --bg-page:    #f5f5f0; --bg-card:  #ffffff; --bg-metric: #ebebeb; --bg-input: #ffffff;
@@ -115,19 +116,39 @@
     .modal-title { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
     .modal-cmd { background: var(--bg-metric); border-radius: 6px; padding: 12px; font-family: monospace; font-size: 14px; word-break: break-all; margin-bottom: 12px; }
     .modal-close { float: right; }
-    /* ── Draggable panels ─────────────────────────── */
-    #adv-sortable { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; align-items:start; }
-    #adv-sortable > .section { margin-bottom:0; }
-    .panel-wide { grid-column:span 2; }
-    .panel-full { grid-column:span 3; }
-    @media (max-width:1100px) { #adv-sortable { grid-template-columns:1fr 1fr; } .panel-full { grid-column:span 2; } }
-    @media (max-width:700px)  { #adv-sortable { grid-template-columns:1fr; } .panel-wide, .panel-full { grid-column:span 1; } }
+    /* ── GridStack dashboard panels ──────────────────────── */
+    #adv-sortable { width:100%; }
+    .grid-stack-item-content { border-radius:12px; overflow:hidden; }
+    .grid-stack > .grid-stack-item > .grid-stack-item-content > .section {
+      height:100%; margin:0; border-radius:0; overflow-y:auto; border:none;
+    }
+    .grid-stack-placeholder > .placeholder-content {
+      background:var(--bg-metric); border:2px dashed var(--border); border-radius:12px;
+    }
     .section-drag-handle { cursor:grab; font-size:15px; opacity:.45; transition:opacity .15s; flex-shrink:0; }
-    .section-drag-handle:hover { opacity:.85; cursor:grabbing; }
-    #adv-sortable > .sortable-ghost { opacity:.35; }
-    #adv-sortable > .sortable-drag { box-shadow:0 8px 28px rgba(0,0,0,.18); border-radius:12px; }
-    /* Data Tables floating panel */
-    #tables-panel-body > .section { margin-bottom:0; }
+    .section-drag-handle:hover { opacity:.85; }
+    .ui-resizable-handle { z-index:10; }
+    .grid-pin-btn { margin-left:auto; padding:3px 6px; font-size:13px; border:1px solid transparent; background:none; color:var(--text-muted); cursor:pointer; opacity:.35; border-radius:5px; flex-shrink:0; transition:opacity .15s,color .15s,background .15s; }
+    .grid-pin-btn:hover { opacity:1; background:var(--bg-metric); }
+    .grid-pin-btn.pinned { color:#f59e0b; opacity:1; border-color:rgba(245,158,11,.3); background:rgba(245,158,11,.08); }
+
+    /* ── Floating utility panels ──────────────────────── */
+    .float-panel {
+      position:fixed; display:none; flex-direction:column;
+      background:var(--bg-card); border:1px solid var(--border);
+      border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.22);
+      overflow:hidden; z-index:55; resize:both; min-width:280px; min-height:120px; max-height:85vh;
+    }
+    .float-panel-handle {
+      display:flex; align-items:center; gap:8px; padding:10px 16px;
+      cursor:move; user-select:none; border-bottom:1px solid var(--border);
+      background:var(--bg-metric); border-radius:12px 12px 0 0; flex-shrink:0;
+    }
+    .float-panel-body {
+      overflow-y:auto; overflow-x:hidden; padding:12px; flex:1; display:flex;
+      flex-direction:column; gap:8px; min-height:0;
+    }
+    .float-panel-body > .section { margin-bottom:0; }
   </style>
 </head>
 <body>
@@ -159,7 +180,10 @@
     <button onclick="manualRefresh()"><i class="ti ti-refresh"></i> Refresh</button>
     <button onclick="openConfigModal()" title="Configuration"><i class="ti ti-settings"></i> Config</button>
     <button onclick="openUpdateModal()" title="Check for software updates" id="btn-update" style="color:#10b981;border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.08);"><i class="ti ti-arrow-up"></i> Update</button>
-    <button onclick="openTablesPanel()" title="Data tables: Payout · Blocks · Peers · Workers" id="btn-tables" style="color:#0e9f6e;border-color:rgba(14,159,110,0.4);background:rgba(14,159,110,0.08);"><i class="ti ti-table"></i> Tables</button>
+    <button onclick="openFloatPanel('tables-panel')" title="Data Tables: Payout · Blocks · Peers · Workers" id="btn-tables-panel" style="color:#0891b2;border-color:rgba(8,145,178,0.35);background:rgba(8,145,178,0.08);"><i class="ti ti-table"></i> Tables</button>
+    <button onclick="openFloatPanel('machine-panel')" title="Machine" id="btn-machine-panel" style="color:#7c3aed;border-color:rgba(124,58,237,0.35);background:rgba(124,58,237,0.08);"><i class="ti ti-device-laptop"></i> Machine</button>
+    <button onclick="openFloatPanel('wallet-panel')" title="Wallet" id="btn-wallet-panel" style="color:#0369a1;border-color:rgba(3,105,161,0.35);background:rgba(3,105,161,0.08);"><i class="ti ti-wallet"></i> Wallet</button>
+    <button onclick="openFloatPanel('sys-panel')" title="System: Backup, Maintenance, Alerts, Watchdogs" id="btn-sys-panel" style="color:#b45309;border-color:rgba(180,83,9,0.35);background:rgba(180,83,9,0.08);"><i class="ti ti-settings-2"></i> System</button>
     <button onclick="toggleDark()" id="dark-btn" title="Toggle dark mode"><i class="ti ti-moon" id="dark-icon"></i></button>
   </div>
 </div>
@@ -216,7 +240,7 @@
     <div class="ctrl-row">
       <button class="btn-green"  onclick="nodeAction('start')">  <i class="ti ti-player-play"></i>  Start</button>
       <button class="btn-red"    onclick="nodeAction('stop')">   <i class="ti ti-player-stop"></i>  Stop</button>
-      <button class="btn-blue"   onclick="nodeAction('restart')"><i class="ti ti-refresh"></i>       Reboot</button>
+      <button class="btn-blue"   onclick="nodeAction('restart')"><i class="ti ti-rotate-clockwise"></i> Reboot</button>
     </div>
     <div class="ctrl-row" style="margin-top:8px;">
       <button onclick="openLogs('bdag-miner-node-1')"><i class="ti ti-terminal-2"></i> Node 1 logs</button>
@@ -234,7 +258,6 @@
 </div>
 <!-- -- Advanced view -------------------------------------------------------- -->
 <div id="adv-view">
-
 
 <div class="grid">
   <div class="metric">
@@ -262,10 +285,10 @@
     <div class="metric-value" id="m-diskdata">&mdash;</div>
     <div class="metric-sub" id="m-diskfree">&mdash;</div>
   </div>
-  <div class="metric">
+  <div class="metric" style="cursor:pointer;user-select:none;" onclick="toggleBalance()" title="Click to show / hide balance">
     <div class="metric-label"><i class="ti ti-coin"></i> Balance</div>
-    <div class="metric-value" id="m-balance">&mdash;</div>
-    <div class="metric-sub">BDAG</div>
+    <div class="metric-value" id="m-balance">••••••</div>
+    <div class="metric-sub">BDAG &nbsp;<i id="m-balance-eye" class="ti ti-eye-off" style="font-size:11px;opacity:0.55;vertical-align:middle;"></i></div>
   </div>
   <div class="metric">
     <div class="metric-label"><i class="ti ti-trending-up"></i> BDAG price</div>
@@ -274,13 +297,14 @@
   </div>
 </div>
 
-<div id="adv-sortable">
-
+<div class="grid-stack" id="adv-sortable">
 
   <!-- Left: combined nodes card -->
-<div id="panel-nodes" class="section panel-wide">
-    <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-server-2"></i> Nodes</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+<div class="grid-stack-item" gs-id="panel-nodes" gs-w="8" gs-h="14" gs-x="0" gs-y="0">
+  <div class="grid-stack-item-content">
+    <div id="panel-nodes" class="section">
+    <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-server-2"></i> Nodes<button id="gpin-panel-nodes" class="grid-pin-btn" onclick="toggleGridPin('panel-nodes');event.stopPropagation();" title="Pin (lock position &amp; size)"><i class="ti ti-pin"></i></button></p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:14px;">
       <!-- Node 1 -->
       <div style="background:var(--bg-metric);border:1px solid var(--border);border-radius:8px;padding:12px;">
         <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
@@ -367,10 +391,13 @@
       <span class="row-value" id="s-uptime">&mdash;</span>
     </div>
   </div>
+  </div>
+</div>
 
-
-<div id="panel-pool-stats" class="section">
-    <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-pickaxe"></i> Pool stats</p>
+<div class="grid-stack-item" gs-id="panel-pool-stats" gs-w="4" gs-h="14" gs-x="8" gs-y="0">
+  <div class="grid-stack-item-content">
+    <div id="panel-pool-stats" class="section">
+    <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-pickaxe"></i> Pool stats<button id="gpin-panel-pool-stats" class="grid-pin-btn" onclick="toggleGridPin('panel-pool-stats');event.stopPropagation();" title="Pin (lock position &amp; size)"><i class="ti ti-pin"></i></button></p>
     <div class="row">
       <span class="row-label"><i class="ti ti-activity"></i> Pool status</span>
       <span id="p-health"><span class="badge badge-warn">Checking...</span></span>
@@ -442,15 +469,17 @@
       <span id="payout-status" style="font-size:13px;color:var(--text-sub);"></span>
     </div>
   </div>
+  </div>
+</div>
 
-
-
-<div id="panel-node-control" class="section">
-  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-terminal-2"></i> Node control</p>
+<div class="grid-stack-item" gs-id="panel-node-control" gs-w="4" gs-h="8" gs-x="0" gs-y="14">
+  <div class="grid-stack-item-content">
+    <div id="panel-node-control" class="section">
+  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-terminal-2"></i> Node control<button id="gpin-panel-node-control" class="grid-pin-btn" onclick="toggleGridPin('panel-node-control');event.stopPropagation();" title="Pin (lock position &amp; size)"><i class="ti ti-pin"></i></button></p>
   <div class="ctrl-row">
     <button class="btn-green"  onclick="nodeAction('start')">  <i class="ti ti-player-play"></i>  Start</button>
     <button class="btn-red"    onclick="nodeAction('stop')">   <i class="ti ti-player-stop"></i>  Stop</button>
-    <button class="btn-blue"   onclick="nodeAction('restart')"><i class="ti ti-refresh"></i>       Reboot</button>
+    <button class="btn-blue"   onclick="nodeAction('restart')"><i class="ti ti-rotate-clockwise"></i> Reboot</button>
   </div>
   <div class="ctrl-row" style="margin-top:8px;">
     <button onclick="openLogs('bdag-miner-node-1')"><i class="ti ti-terminal-2"></i> Node 1 logs</button>
@@ -464,9 +493,13 @@
   </div>
   <div class="ctrl-status" id="ctrl-status"></div>
 </div>
+  </div>
+</div>
 
-<div id="panel-containers" class="section">
-  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-box"></i> Containers</p>
+<div class="grid-stack-item" gs-id="panel-containers" gs-w="4" gs-h="8" gs-x="4" gs-y="14">
+  <div class="grid-stack-item-content">
+    <div id="panel-containers" class="section">
+  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-box"></i> Containers<button id="gpin-panel-containers" class="grid-pin-btn" onclick="toggleGridPin('panel-containers');event.stopPropagation();" title="Pin (lock position &amp; size)"><i class="ti ti-pin"></i></button></p>
   <div class="row" style="margin-bottom:6px;">
     <span class="row-label"><i class="ti ti-switch"></i> HAProxy active backend</span>
     <span id="haproxy-backend"><span class="badge badge-warn">&mdash;</span></span>
@@ -478,363 +511,84 @@
   <div class="container-row"><span class="container-name">pool-db</span>          <div style="display:flex;align-items:center;gap:4px;"><span class="badge badge-warn" id="c-pool-db">&mdash;</span>          <button class="btn-green"  onclick="containerAction('start','pool-db')"             title="Start"   style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-play"></i></button><button class="btn-red"   onclick="containerAction('stop','pool-db')"              title="Stop"    style="padding:3px 7px;font-size:12px;"><i class="ti ti-player-stop"></i></button><button class="btn-blue"  onclick="containerAction('restart','pool-db')"           title="Restart" style="padding:3px 7px;font-size:12px;"><i class="ti ti-refresh"></i></button></div></div>
   <p class="note" id="container-note" style="display:none;">Container status requires the dashboard server. Run <strong>blockdag-dashboard-server.py</strong> and open http://localhost:8765</p>
 </div>
-
-
-<div id="panel-resources" class="section">
-  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-cpu"></i> Resources</p>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-server"></i> bdag-miner-node-1</span>
-    <span class="row-value" id="r-mem-node1">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-server"></i> bdag-miner-node-2</span>
-    <span class="row-value" id="r-mem-node2">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-wave-sine"></i> asic-pool</span>
-    <span class="row-value" id="r-mem-pool">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-database"></i> pool-db</span>
-    <span class="row-value" id="r-mem-db">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-database-import"></i> Docker volumes</span>
-    <span class="row-value" id="r-vol-size">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-network"></i> node-1 net I/O</span>
-    <span class="row-value" id="r-net-node1">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-network"></i> node-2 net I/O</span>
-    <span class="row-value" id="r-net-node2">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-network"></i> pool net I/O</span>
-    <span class="row-value" id="r-net-pool">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-wifi"></i> Host network speed</span>
-    <span class="row-value" id="r-net-host">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-device-floppy"></i> Backup drive free</span>
-    <span id="r-backup-disk"><span class="badge badge-warn">&mdash;</span></span>
-  </div>
-
-
-<div id="panel-machine" class="section">
-  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-world"></i> Machine</p>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-globe"></i> Public IP</span>
-    <span class="row-value" id="m-pubip">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-network"></i> Local IP</span>
-    <span class="row-value" id="m-localip">&mdash;</span>
   </div>
 </div>
 
-<div id="panel-wallet" class="section">
-  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-wallet"></i> Wallet</p>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-id"></i> Mining address</span>
-    <span style="display:flex;align-items:center;gap:6px;max-width:60%;min-width:0;">
-      <span class="wallet" id="w-addr" title="" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;">&mdash;</span>
-      <button id="w-addr-copy" onclick="copyWalletAddr()" title="Copy full address" style="padding:3px 7px;flex-shrink:0;display:none;"><i class="ti ti-copy"></i></button>
-    </span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-coin"></i> Balance</span>
-    <span class="row-value" id="w-balance">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-trending-up"></i> BDAG price</span>
-    <span class="row-value" id="w-price">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-currency-dollar"></i> USD value</span>
-    <span class="row-value" id="w-usd">&mdash;</span>
-  </div>
+<div class="grid-stack-item" gs-id="panel-resources" gs-w="4" gs-h="11" gs-x="8" gs-y="14">
+  <div class="grid-stack-item-content">
+    <div id="panel-resources" class="section">
+  <p class="section-title"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-cpu"></i> Resources<button id="gpin-panel-resources" class="grid-pin-btn" onclick="toggleGridPin('panel-resources');event.stopPropagation();" title="Pin (lock position &amp; size)"><i class="ti ti-pin"></i></button></p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:0 20px;">
 
-
-
-
-<div id="panel-backup" class="section">
-  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('backup')">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-database-export"></i> Backup</p>
-    <i class="ti ti-chevron-down" id="backup-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
-  </div>
-  <div id="backup-section-body" style="display:none;margin-top:12px;">
-  <!-- Backup location -->
-  <div style="margin-bottom:10px;">
-    <p style="font-size:12px;font-weight:600;color:var(--text-sub);margin:0 0 5px;display:flex;align-items:center;gap:5px;"><i class="ti ti-folder"></i> Backup location</p>
-    <div style="display:flex;gap:6px;align-items:center;">
-      <input type="text" id="bk-location" placeholder="C:\blockdag node\data-restore\backups" style="margin-bottom:0;flex:1;font-family:monospace;font-size:12px;" />
-      <button class="btn-blue" onclick="browseBackupLocation()" title="Browse for folder" style="padding:7px 10px;flex-shrink:0;"><i class="ti ti-folder-open"></i></button>
-      <button class="btn-blue" onclick="saveBackupLocation()" style="flex-shrink:0;"><i class="ti ti-check"></i> Save</button>
-    </div>
-  </div>
-  <hr style="border:none;border-top:1px solid var(--border);margin:4px 0 10px;">
-  <!-- Schedule 1 -->
-  <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 4px;">
-    <p style="font-size:12px;font-weight:600;color:#555;margin:0;">Schedule 1</p>
-    <button id="bk1-toggle-btn" data-enabled="true" onclick="toggleBackupEnabled(1)" class="btn-green" style="font-size:12px;padding:3px 10px;">
-      <i class="ti ti-check"></i> Enabled
-    </button>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-clock"></i> Last backup</span>
-    <span class="row-value" id="bk1-last">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-calendar"></i> Next scheduled</span>
-    <span class="row-value" id="bk1-next">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-refresh"></i> Run every</span>
-    <span style="display:flex;align-items:center;gap:8px;">
-      <input type="number" id="bk1-value" min="1" max="999" step="1" value="1" style="width:60px;margin-bottom:0;" />
-      <select id="bk1-unit" style="margin-bottom:0;">
-        <option value="hours">Hours</option>
-        <option value="days">Days</option>
-        <option value="weeks">Weeks</option>
-        <option value="months">Months</option>
-      </select>
-      <button class="btn-blue" onclick="applyBackupSchedule(1)" id="bk1-apply-btn"><i class="ti ti-check"></i> Apply</button>
-    </span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-copy"></i> Keep copies</span>
-    <span style="display:flex;align-items:center;gap:8px;">
-      <input type="number" id="bk1-retain" min="1" max="999" step="1" value="12" style="width:60px;margin-bottom:0;" />
-      <button class="btn-blue" onclick="saveBackupRetention(1)" id="bk1-retain-btn"><i class="ti ti-check"></i> Apply</button>
-    </span>
-  </div>
-  <!-- Schedule 2 -->
-  <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 4px;">
-    <p style="font-size:12px;font-weight:600;color:#555;margin:0;">Schedule 2</p>
-    <button id="bk2-toggle-btn" data-enabled="true" onclick="toggleBackupEnabled(2)" class="btn-green" style="font-size:12px;padding:3px 10px;">
-      <i class="ti ti-check"></i> Enabled
-    </button>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-clock"></i> Last backup</span>
-    <span class="row-value" id="bk2-last">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-calendar"></i> Next scheduled</span>
-    <span class="row-value" id="bk2-next">&mdash;</span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-refresh"></i> Run every</span>
-    <span style="display:flex;align-items:center;gap:8px;">
-      <input type="number" id="bk2-value" min="1" max="999" step="1" value="1" style="width:60px;margin-bottom:0;" />
-      <select id="bk2-unit" style="margin-bottom:0;">
-        <option value="hours">Hours</option>
-        <option value="days">Days</option>
-        <option value="weeks">Weeks</option>
-        <option value="months">Months</option>
-      </select>
-      <button class="btn-blue" onclick="applyBackupSchedule(2)" id="bk2-apply-btn"><i class="ti ti-check"></i> Apply</button>
-    </span>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-copy"></i> Keep copies</span>
-    <span style="display:flex;align-items:center;gap:8px;">
-      <input type="number" id="bk2-retain" min="1" max="999" step="1" value="12" style="width:60px;margin-bottom:0;" />
-      <button class="btn-blue" onclick="saveBackupRetention(2)" id="bk2-retain-btn"><i class="ti ti-check"></i> Apply</button>
-    </span>
-  </div>
-  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-    <button class="btn-orange" onclick="backupNow()"><i class="ti ti-database-export"></i> Backup now</button>
-    <button class="btn-blue" onclick="runSetupTasks()" id="bk-setup-btn"><i class="ti ti-settings"></i> Re-register Tasks</button>
-    <button class="btn-blue" onclick="verifyBackup()" id="bk-verify-btn"><i class="ti ti-shield-check"></i> Verify Last Backup</button>
-  </div>
-  <div class="ctrl-status" id="bk-status"></div>
-  <div id="bk-verify-result" style="font-size:13px;color:var(--text-muted);margin-top:8px;display:none;"></div>
-  <hr style="border:none;border-top:1px solid var(--border);margin:12px 0 8px;">
-  <!-- Restore from backup -->
-  <p style="font-size:12px;font-weight:600;color:var(--text-sub);margin:0 0 6px;display:flex;align-items:center;gap:5px;"><i class="ti ti-history"></i> Restore from backup</p>
-  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-    <select id="bk-restore-select" style="flex:1;min-width:160px;margin-bottom:0;font-size:13px;background:var(--bg-input);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 9px;" onchange="document.getElementById('bk-restore-btn').disabled=!this.value;">
-      <option value="">— select a backup —</option>
-    </select>
-    <button class="btn-blue" onclick="refreshBackupList()" style="padding:7px 10px;flex-shrink:0;" title="Refresh list"><i class="ti ti-refresh"></i></button>
-    <button class="btn-red" onclick="confirmRestore()" id="bk-restore-btn" disabled style="flex-shrink:0;"><i class="ti ti-history"></i> Restore</button>
-  </div>
-  <p class="note" style="margin-top:6px;">&#9888; Restore stops the stack and replaces all chain data. The node will re-sync from the backup point.</p>
-  </div><!-- end backup-section-body -->
-</div>
-
-<div id="panel-maintenance" class="section">
-  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('maintenance')">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-clock-play"></i> Maintenance</p>
-    <i class="ti ti-chevron-down" id="maintenance-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
-  </div>
-  <div id="maintenance-section-body" style="display:none;margin-top:12px;">
-  <div class="row">
-    <span class="row-label"><i class="ti ti-refresh"></i> Auto-restart enabled</span>
-    <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
-      <input type="checkbox" id="maint-enabled" />
-      <span style="font-size:13px;color:var(--text-muted);">Enable scheduled restart</span>
-    </label>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-clock"></i> Restart time</span>
-    <input type="time" id="maint-time" value="03:00"
-           style="background:var(--bg-input);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:14px;" />
-  </div>
-  <div style="margin-top:10px;">
-    <label style="font-size:13px;color:var(--text-muted);margin-bottom:6px;display:block;">Days of week</label>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;" id="maint-days">
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Mon" checked /> Mon</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Tue" checked /> Tue</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Wed" checked /> Wed</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Thu" checked /> Thu</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Fri" checked /> Fri</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Sat" checked /> Sat</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Sun" checked /> Sun</label>
-    </div>
-  </div>
-  <div style="margin-top:10px;">
-    <label style="font-size:13px;color:var(--text-muted);margin-bottom:6px;display:block;">Containers to restart</label>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;" id="maint-containers">
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="bdag-miner-node-1" checked /> node-1</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="bdag-miner-node-2" checked /> node-2</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="asic-pool" checked /> asic-pool</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="rpc-failover" /> rpc-failover</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="pool-db" /> pool-db</label>
-    </div>
-  </div>
-  <div style="margin-top:12px;">
-    <button class="btn-blue" onclick="saveMaintenanceConfig()"><i class="ti ti-device-floppy"></i> Save</button>
-  </div>
-  <div class="ctrl-status" id="maint-status"></div>
-  </div><!-- end maintenance-section-body -->
-</div>
-
-<div id="panel-alerts" class="section">
-  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('alerts')">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-bell"></i> Alerts</p>
-    <i class="ti ti-chevron-down" id="alerts-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
-  </div>
-  <div id="alerts-section-body" style="display:none;margin-top:12px;">
-  <p class="note" style="margin-bottom:12px;">Get notified on Discord, Telegram, or your browser when the pool freezes or peer count drops.</p>
-  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-row);">
-    <button id="notif-btn" onclick="toggleNotifications()"><i class="ti ti-bell" id="notif-icon"></i> <span id="notif-label">Enable browser alerts</span></button>
-    <span id="notif-status" style="font-size:13px;color:var(--text-sub);"></span>
-  </div>
-  <label>Discord webhook URL</label>
-  <input type="text" id="al-discord" placeholder="https://discord.com/api/webhooks/..." />
-  <label>Telegram bot token</label>
-  <input type="text" id="al-tg-token" placeholder="123456789:AABBccdd..." />
-  <label>Telegram chat ID</label>
-  <input type="text" id="al-tg-chat" placeholder="-1001234567890" />
-  <label>Low-peer alert threshold</label>
-  <input type="number" id="al-peer-thr" min="1" max="50" value="5" style="width:90px;margin-bottom:12px;" />
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
-      <input type="checkbox" id="al-freeze-chk" checked /> Freeze alerts
-    </label>
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
-      <input type="checkbox" id="al-peer-chk" checked /> Peer-count alerts
-    </label>
-  </div>
-  <label>Low-peer divergence threshold (blocks)</label>
-  <input type="number" id="al-div-thr" min="1" max="1000" value="10" style="width:90px;margin-bottom:12px;" />
-  <label>Disk % alert threshold</label>
-  <input type="number" id="al-disk-thr" min="1" max="99" value="15" style="width:90px;margin-bottom:12px;" />
-  <div style="display:flex;gap:8px;flex-wrap:wrap;">
-    <button class="btn-blue" onclick="saveAlertConfig()"><i class="ti ti-device-floppy"></i> Save</button>
-    <button class="btn-orange" onclick="testAlert()"><i class="ti ti-send"></i> Send test</button>
-  </div>
-  <div class="ctrl-status" id="al-status"></div>
-  <!-- Alert History subsection -->
-  <div style="margin-top:14px;border-top:1px solid var(--border-row);padding-top:10px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleAlertHistory()">
-      <span style="font-size:13px;font-weight:500;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;">Alert History</span>
-      <i class="ti ti-chevron-down" id="alert-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
-    </div>
-    <div id="alert-history-body" style="display:none;margin-top:10px;">
-      <div style="overflow-x:auto;">
-        <table class="workers-table" id="alert-history-table">
-          <thead><tr><th>Time</th><th>Message</th></tr></thead>
-          <tbody id="alert-history-tbody">
-            <tr><td colspan="2" style="color:var(--text-sub);padding:10px;">No history yet.</td></tr>
-          </tbody>
-        </table>
+    <!-- Left: Memory + Chain data -->
+    <div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-sub);padding:2px 0 7px;border-bottom:1px solid var(--border);margin-bottom:2px;display:flex;align-items:center;gap:5px;"><i class="ti ti-cpu-2"></i> Memory</div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-server"></i> node-1</span>
+        <span class="row-value" id="r-mem-node1">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-server"></i> node-2</span>
+        <span class="row-value" id="r-mem-node2">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-wave-sine"></i> pool</span>
+        <span class="row-value" id="r-mem-pool">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-database"></i> pool-db</span>
+        <span class="row-value" id="r-mem-db">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-hdd"></i> Chain data</span>
+        <span class="row-value" id="r-vol-size">&mdash;</span>
       </div>
     </div>
-  </div>
-  </div><!-- end alerts-section-body -->
-</div>
 
-<div id="panel-watchdog" class="section">
-  <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('watchdogs')">
-    <p class="section-title" style="margin-bottom:0;"><i class="ti ti-grip-vertical section-drag-handle drag-handle" onclick="event.stopPropagation()" title="Drag to reorder"></i><i class="ti ti-shield-check"></i> Watchdogs</p>
-    <i class="ti ti-chevron-down" id="watchdogs-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
-  </div>
-  <div id="watchdogs-section-body" style="display:none;margin-top:12px;">
-  <p class="note" style="margin-bottom:14px;">Auto-restart containers when stuck. Changes take effect on the next watchdog tick — no dashboard restart needed.</p>
+    <!-- Right: Network + Disk -->
+    <div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-sub);padding:2px 0 7px;border-bottom:1px solid var(--border);margin-bottom:2px;display:flex;align-items:center;gap:5px;"><i class="ti ti-network"></i> Network / Disk</div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-network"></i> node-1 I/O</span>
+        <span class="row-value" id="r-net-node1">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-network"></i> node-2 I/O</span>
+        <span class="row-value" id="r-net-node2">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-network"></i> pool I/O</span>
+        <span class="row-value" id="r-net-pool">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-wifi"></i> Host speed</span>
+        <span class="row-value" id="r-net-host">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-device-floppy"></i> Backup free</span>
+        <span id="r-backup-disk"><span class="badge badge-warn">&mdash;</span></span>
+      </div>
+    </div>
 
-  <!-- Node Freeze Watchdog -->
-  <p style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px;">Node Freeze Watchdog</p>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-power"></i> Enabled</span>
-    <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
-      <input type="checkbox" id="wd-node-enabled" checked />
-      <span style="font-size:13px;color:var(--text-sub);">Auto-restart frozen nodes</span>
-    </label>
   </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-clock-pause"></i> Grace period (s)</span>
-    <input type="number" id="wd-node-grace" min="30" value="300" style="width:90px;" title="How long the node must be frozen before auto-restart" />
-  </div>
-  <div class="row" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-row);">
-    <span class="row-label"><i class="ti ti-hourglass"></i> Startup ignore (s)</span>
-    <input type="number" id="wd-node-startup" min="0" value="300" style="width:90px;" title="Ignore containers that restarted less than this many seconds ago" />
-  </div>
-
-  <!-- Pool Nonce Watchdog -->
-  <p style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px;">Pool Nonce Watchdog</p>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-power"></i> Enabled</span>
-    <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
-      <input type="checkbox" id="wd-pool-enabled" checked />
-      <span style="font-size:13px;color:var(--text-sub);">Auto-restart on nonce errors</span>
-    </label>
-  </div>
-  <div class="row">
-    <span class="row-label"><i class="ti ti-clock-pause"></i> Grace period (s)</span>
-    <input type="number" id="wd-pool-grace" min="30" value="180" style="width:90px;" title="How long nonce-too-low must persist before auto-restart" />
-  </div>
-  <div class="row" style="margin-bottom:14px;">
-    <span class="row-label"><i class="ti ti-hourglass"></i> Startup ignore (s)</span>
-    <input type="number" id="wd-pool-startup" min="0" value="120" style="width:90px;" title="Ignore pool that restarted less than this many seconds ago" />
-  </div>
-
-  <button class="btn-blue" onclick="saveWatchdogConfig()"><i class="ti ti-device-floppy"></i> Save</button>
-  <div class="ctrl-status" id="wd-status"></div>
-  </div><!-- end watchdogs-section-body -->
-</div>
-
 
 </div><!-- /adv-sortable -->
 
+</div>
+  </div>
 </div><!-- /adv-view -->
 
 <!-- ── Data Tables floating panel ─────────────────────────────────── -->
-<div id="tables-panel" style="display:none;position:fixed;top:80px;right:20px;width:900px;max-width:calc(100vw - 40px);height:72vh;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22);flex-direction:column;overflow:hidden;z-index:50;resize:both;">
-  <div id="tables-panel-handle" style="display:flex;align-items:center;gap:8px;padding:10px 16px;cursor:move;user-select:none;border-bottom:1px solid var(--border);background:var(--bg-metric);border-radius:12px 12px 0 0;flex-shrink:0;">
+<div id="tables-panel" class="float-panel" style="top:80px;right:20px;width:900px;height:70vh;">
+  <div id="tables-panel-handle" class="float-panel-handle">
     <i class="ti ti-table" style="color:var(--text-muted);font-size:16px;"></i>
     <strong style="font-size:14px;">Data Tables</strong>
     <span style="font-size:12px;color:var(--text-muted);margin-left:4px;">&mdash; Payout History &middot; Recent Blocks &middot; Peers &middot; Workers</span>
-    <button onclick="closeTablesPanel()" style="margin-left:auto;padding:4px 10px;" title="Close panel"><i class="ti ti-x"></i></button>
+    <button id="tables-panel-pin-btn" onclick="togglePanelAnchor('tables-panel')" style="margin-left:auto;padding:4px 8px;" title="Pin (lock position &amp; size)"><i class="ti ti-pin"></i></button>
+    <button onclick="closeFloatPanel('tables-panel')" style="padding:4px 10px;" title="Close"><i class="ti ti-x"></i></button>
   </div>
-  <div id="tables-panel-body" style="overflow-y:auto;padding:12px;flex:1;display:flex;flex-direction:column;gap:8px;min-height:0;">
-<div id="panel-payout-history" class="section" style="margin-bottom:12px;">
+  <div class="float-panel-body">
+<div id="panel-payout-history" class="section">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePayoutHistory()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-receipt"></i> Payout History</p>
     <i class="ti ti-chevron-down" id="payout-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -858,7 +612,7 @@
   </div>
 </div>
 
-<div id="panel-recent-blocks" class="section" style="margin-bottom:12px;">
+<div id="panel-recent-blocks" class="section">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleRecentBlocks()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-cube"></i> Recent Blocks <span id="recent-blocks-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="recent-blocks-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -886,7 +640,7 @@
   </div>
 </div>
 
-<div id="panel-connected-peers" class="section" style="margin-bottom:12px;">
+<div id="panel-connected-peers" class="section">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleConnectedPeers()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-plug-connected"></i> Connected Peers <span id="connected-peers-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="connected-peers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -917,7 +671,7 @@
   </div>
 </div>
 
-<div id="panel-peer-manager" class="section" style="margin-bottom:12px;">
+<div id="panel-peer-manager" class="section">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="togglePeerManager()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-list-check"></i> Peer Manager <span id="peer-manager-count" style="font-weight:400;font-size:13px;color:var(--text-sub);"></span></p>
     <i class="ti ti-chevron-down" id="peer-manager-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -979,7 +733,7 @@
   </div>
 </div>
 
-<div id="panel-workers" class="section" style="margin-bottom:12px;">
+<div id="panel-workers" class="section">
   <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleWorkers()">
     <p class="section-title" style="margin-bottom:0;"><i class="ti ti-users"></i> Workers / Miners</p>
     <i class="ti ti-chevron-down" id="workers-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:18px;"></i>
@@ -1006,7 +760,332 @@
       </table>
     </div>
   </div>
-</div><!-- /panel-workers -->
+</div>
+  </div>
+</div>
+
+<!-- ── Machine floating panel ──────────────────────────────────────── -->
+<div id="machine-panel" class="float-panel" style="top:100px;right:20px;width:340px;">
+  <div id="machine-panel-handle" class="float-panel-handle">
+    <i class="ti ti-device-laptop" style="color:var(--text-muted);font-size:16px;"></i>
+    <strong style="font-size:14px;">Machine</strong>
+    <button id="machine-panel-pin-btn" onclick="togglePanelAnchor('machine-panel')" style="margin-left:auto;padding:4px 8px;" title="Pin (lock position &amp; size)"><i class="ti ti-pin"></i></button>
+    <button onclick="closeFloatPanel('machine-panel')" style="padding:4px 10px;" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="float-panel-body">
+    <div id="panel-machine" class="section">
+      <p class="section-title"><i class="ti ti-world"></i> Machine</p>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-globe"></i> Public IP</span>
+        <span class="row-value" id="m-pubip">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-network"></i> Local IP</span>
+        <span class="row-value" id="m-localip">&mdash;</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Wallet floating panel ───────────────────────────────────────── -->
+<div id="wallet-panel" class="float-panel" style="top:100px;right:20px;width:360px;">
+  <div id="wallet-panel-handle" class="float-panel-handle">
+    <i class="ti ti-wallet" style="color:var(--text-muted);font-size:16px;"></i>
+    <strong style="font-size:14px;">Wallet</strong>
+    <button id="wallet-panel-pin-btn" onclick="togglePanelAnchor('wallet-panel')" style="margin-left:auto;padding:4px 8px;" title="Pin (lock position &amp; size)"><i class="ti ti-pin"></i></button>
+    <button onclick="closeFloatPanel('wallet-panel')" style="padding:4px 10px;" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="float-panel-body">
+    <div id="panel-wallet" class="section">
+      <p class="section-title"><i class="ti ti-wallet"></i> Wallet</p>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-id"></i> Mining address</span>
+        <span style="display:flex;align-items:center;gap:6px;max-width:60%;min-width:0;">
+          <span class="wallet" id="w-addr" title="" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;">&mdash;</span>
+          <button id="w-addr-copy" onclick="copyWalletAddr()" title="Copy full address" style="padding:3px 7px;flex-shrink:0;display:none;"><i class="ti ti-copy"></i></button>
+        </span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-coin"></i> Balance</span>
+        <span class="row-value" id="w-balance">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-trending-up"></i> BDAG price</span>
+        <span class="row-value" id="w-price">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-currency-dollar"></i> USD value</span>
+        <span class="row-value" id="w-usd">&mdash;</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── System floating panel ──────────────────────────────────────── -->
+<div id="sys-panel" class="float-panel" style="top:100px;left:20px;width:440px;height:65vh;">
+  <div id="sys-panel-handle" class="float-panel-handle">
+    <i class="ti ti-settings-2" style="color:var(--text-muted);font-size:16px;"></i>
+    <strong style="font-size:14px;">System</strong>
+    <span style="font-size:12px;color:var(--text-muted);margin-left:4px;">&mdash; Backup &middot; Maintenance &middot; Alerts &middot; Watchdogs</span>
+    <button id="sys-panel-pin-btn" onclick="togglePanelAnchor('sys-panel')" style="margin-left:auto;padding:4px 8px;" title="Pin (lock position &amp; size)"><i class="ti ti-pin"></i></button>
+    <button onclick="closeFloatPanel('sys-panel')" style="padding:4px 10px;" title="Close"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="float-panel-body">
+    <div id="panel-backup" class="section">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('backup')">
+        <p class="section-title" style="margin-bottom:0;"><i class="ti ti-database-export"></i> Backup</p>
+        <i class="ti ti-chevron-down" id="backup-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+      </div>
+      <div id="backup-section-body" style="display:none;margin-top:12px;">
+      <!-- Backup location -->
+      <div style="margin-bottom:10px;">
+        <p style="font-size:12px;font-weight:600;color:var(--text-sub);margin:0 0 5px;display:flex;align-items:center;gap:5px;"><i class="ti ti-folder"></i> Backup location</p>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="text" id="bk-location" placeholder="C:\blockdag node\data-restore\backups" style="margin-bottom:0;flex:1;font-family:monospace;font-size:12px;" />
+          <button class="btn-blue" onclick="browseBackupLocation()" title="Browse for folder" style="padding:7px 10px;flex-shrink:0;"><i class="ti ti-folder-open"></i></button>
+          <button class="btn-blue" onclick="saveBackupLocation()" style="flex-shrink:0;"><i class="ti ti-check"></i> Save</button>
+        </div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:4px 0 10px;">
+      <!-- Schedule 1 -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 4px;">
+        <p style="font-size:12px;font-weight:600;color:#555;margin:0;">Schedule 1</p>
+        <button id="bk1-toggle-btn" data-enabled="true" onclick="toggleBackupEnabled(1)" class="btn-green" style="font-size:12px;padding:3px 10px;">
+          <i class="ti ti-check"></i> Enabled
+        </button>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-clock"></i> Last backup</span>
+        <span class="row-value" id="bk1-last">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-calendar"></i> Next scheduled</span>
+        <span class="row-value" id="bk1-next">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-refresh"></i> Run every</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <input type="number" id="bk1-value" min="1" max="999" step="1" value="1" style="width:60px;margin-bottom:0;" />
+          <select id="bk1-unit" style="margin-bottom:0;">
+            <option value="hours">Hours</option>
+            <option value="days">Days</option>
+            <option value="weeks">Weeks</option>
+            <option value="months">Months</option>
+          </select>
+          <button class="btn-blue" onclick="applyBackupSchedule(1)" id="bk1-apply-btn"><i class="ti ti-check"></i> Apply</button>
+        </span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-copy"></i> Keep copies</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <input type="number" id="bk1-retain" min="1" max="999" step="1" value="12" style="width:60px;margin-bottom:0;" />
+          <button class="btn-blue" onclick="saveBackupRetention(1)" id="bk1-retain-btn"><i class="ti ti-check"></i> Apply</button>
+        </span>
+      </div>
+      <!-- Schedule 2 -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 4px;">
+        <p style="font-size:12px;font-weight:600;color:#555;margin:0;">Schedule 2</p>
+        <button id="bk2-toggle-btn" data-enabled="true" onclick="toggleBackupEnabled(2)" class="btn-green" style="font-size:12px;padding:3px 10px;">
+          <i class="ti ti-check"></i> Enabled
+        </button>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-clock"></i> Last backup</span>
+        <span class="row-value" id="bk2-last">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-calendar"></i> Next scheduled</span>
+        <span class="row-value" id="bk2-next">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-refresh"></i> Run every</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <input type="number" id="bk2-value" min="1" max="999" step="1" value="1" style="width:60px;margin-bottom:0;" />
+          <select id="bk2-unit" style="margin-bottom:0;">
+            <option value="hours">Hours</option>
+            <option value="days">Days</option>
+            <option value="weeks">Weeks</option>
+            <option value="months">Months</option>
+          </select>
+          <button class="btn-blue" onclick="applyBackupSchedule(2)" id="bk2-apply-btn"><i class="ti ti-check"></i> Apply</button>
+        </span>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-copy"></i> Keep copies</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <input type="number" id="bk2-retain" min="1" max="999" step="1" value="12" style="width:60px;margin-bottom:0;" />
+          <button class="btn-blue" onclick="saveBackupRetention(2)" id="bk2-retain-btn"><i class="ti ti-check"></i> Apply</button>
+        </span>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-orange" onclick="backupNow()"><i class="ti ti-database-export"></i> Backup now</button>
+        <button class="btn-blue" onclick="runSetupTasks()" id="bk-setup-btn"><i class="ti ti-settings"></i> Re-register Tasks</button>
+        <button class="btn-blue" onclick="verifyBackup()" id="bk-verify-btn"><i class="ti ti-shield-check"></i> Verify Last Backup</button>
+      </div>
+      <div class="ctrl-status" id="bk-status"></div>
+      <div id="bk-verify-result" style="font-size:13px;color:var(--text-muted);margin-top:8px;display:none;"></div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:12px 0 8px;">
+      <!-- Restore from backup -->
+      <p style="font-size:12px;font-weight:600;color:var(--text-sub);margin:0 0 6px;display:flex;align-items:center;gap:5px;"><i class="ti ti-history"></i> Restore from backup</p>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <select id="bk-restore-select" style="flex:1;min-width:160px;margin-bottom:0;font-size:13px;background:var(--bg-input);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 9px;" onchange="document.getElementById('bk-restore-btn').disabled=!this.value;">
+          <option value="">— select a backup —</option>
+        </select>
+        <button class="btn-blue" onclick="refreshBackupList()" style="padding:7px 10px;flex-shrink:0;" title="Refresh list"><i class="ti ti-refresh"></i></button>
+        <button class="btn-red" onclick="confirmRestore()" id="bk-restore-btn" disabled style="flex-shrink:0;"><i class="ti ti-history"></i> Restore</button>
+      </div>
+      <p class="note" style="margin-top:6px;">&#9888; Restore stops the stack and replaces all chain data. The node will re-sync from the backup point.</p>
+      </div><!-- end backup-section-body -->
+    </div>
+    <div id="panel-maintenance" class="section">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('maintenance')">
+        <p class="section-title" style="margin-bottom:0;"><i class="ti ti-clock-play"></i> Maintenance</p>
+        <i class="ti ti-chevron-down" id="maintenance-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+      </div>
+      <div id="maintenance-section-body" style="display:none;margin-top:12px;">
+      <div class="row">
+        <span class="row-label"><i class="ti ti-refresh"></i> Auto-restart enabled</span>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+          <input type="checkbox" id="maint-enabled" />
+          <span style="font-size:13px;color:var(--text-muted);">Enable scheduled restart</span>
+        </label>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-clock"></i> Restart time</span>
+        <input type="time" id="maint-time" value="03:00"
+               style="background:var(--bg-input);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:14px;" />
+      </div>
+      <div style="margin-top:10px;">
+        <label style="font-size:13px;color:var(--text-muted);margin-bottom:6px;display:block;">Days of week</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;" id="maint-days">
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Mon" checked /> Mon</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Tue" checked /> Tue</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Wed" checked /> Wed</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Thu" checked /> Thu</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Fri" checked /> Fri</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Sat" checked /> Sat</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="Sun" checked /> Sun</label>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <label style="font-size:13px;color:var(--text-muted);margin-bottom:6px;display:block;">Containers to restart</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;" id="maint-containers">
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="bdag-miner-node-1" checked /> node-1</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="bdag-miner-node-2" checked /> node-2</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="asic-pool" checked /> asic-pool</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="rpc-failover" /> rpc-failover</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;margin:0;cursor:pointer;"><input type="checkbox" value="pool-db" /> pool-db</label>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn-blue" onclick="saveMaintenanceConfig()"><i class="ti ti-device-floppy"></i> Save</button>
+      </div>
+      <div class="ctrl-status" id="maint-status"></div>
+      </div><!-- end maintenance-section-body -->
+    </div>
+    <div id="panel-alerts" class="section">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('alerts')">
+        <p class="section-title" style="margin-bottom:0;"><i class="ti ti-bell"></i> Alerts</p>
+        <i class="ti ti-chevron-down" id="alerts-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+      </div>
+      <div id="alerts-section-body" style="display:none;margin-top:12px;">
+      <p class="note">Get notified on Discord, Telegram, or your browser when the pool freezes or peer count drops.</p>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-row);">
+        <button id="notif-btn" onclick="toggleNotifications()"><i class="ti ti-bell" id="notif-icon"></i> <span id="notif-label">Enable browser alerts</span></button>
+        <span id="notif-status" style="font-size:13px;color:var(--text-sub);"></span>
+      </div>
+      <label>Discord webhook URL</label>
+      <input type="text" id="al-discord" placeholder="https://discord.com/api/webhooks/..." />
+      <label>Telegram bot token</label>
+      <input type="text" id="al-tg-token" placeholder="123456789:AABBccdd..." />
+      <label>Telegram chat ID</label>
+      <input type="text" id="al-tg-chat" placeholder="-1001234567890" />
+      <label>Low-peer alert threshold</label>
+      <input type="number" id="al-peer-thr" min="1" max="50" value="5" style="width:90px;margin-bottom:12px;" />
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
+          <input type="checkbox" id="al-freeze-chk" checked /> Freeze alerts
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#444;margin:0;cursor:pointer;">
+          <input type="checkbox" id="al-peer-chk" checked /> Peer-count alerts
+        </label>
+      </div>
+      <label>Low-peer divergence threshold (blocks)</label>
+      <input type="number" id="al-div-thr" min="1" max="1000" value="10" style="width:90px;margin-bottom:12px;" />
+      <label>Disk % alert threshold</label>
+      <input type="number" id="al-disk-thr" min="1" max="99" value="15" style="width:90px;margin-bottom:12px;" />
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-blue" onclick="saveAlertConfig()"><i class="ti ti-device-floppy"></i> Save</button>
+        <button class="btn-orange" onclick="testAlert()"><i class="ti ti-send"></i> Send test</button>
+      </div>
+      <div class="ctrl-status" id="al-status"></div>
+      <!-- Alert History subsection -->
+      <div style="margin-top:14px;border-top:1px solid var(--border-row);padding-top:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleAlertHistory()">
+          <span style="font-size:13px;font-weight:500;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;">Alert History</span>
+          <i class="ti ti-chevron-down" id="alert-history-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+        </div>
+        <div id="alert-history-body" style="display:none;margin-top:10px;">
+          <div style="overflow-x:auto;">
+            <table class="workers-table" id="alert-history-table">
+              <thead><tr><th>Time</th><th>Message</th></tr></thead>
+              <tbody id="alert-history-tbody">
+                <tr><td colspan="2" style="color:var(--text-sub);padding:10px;">No history yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      </div><!-- end alerts-section-body -->
+    </div>
+    <div id="panel-watchdog" class="section">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" onclick="toggleSection('watchdogs')">
+        <p class="section-title" style="margin-bottom:0;"><i class="ti ti-shield-check"></i> Watchdogs</p>
+        <i class="ti ti-chevron-down" id="watchdogs-section-chevron" style="color:var(--text-sub);transition:transform .2s;font-size:16px;"></i>
+      </div>
+      <div id="watchdogs-section-body" style="display:none;margin-top:12px;">
+      <p class="note" style="margin-bottom:14px;">Auto-restart containers when stuck. Changes take effect on the next watchdog tick — no dashboard restart needed.</p>
+
+      <!-- Node Freeze Watchdog -->
+      <p style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px;">Node Freeze Watchdog</p>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-power"></i> Enabled</span>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+          <input type="checkbox" id="wd-node-enabled" checked />
+          <span style="font-size:13px;color:var(--text-sub);">Auto-restart frozen nodes</span>
+        </label>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-clock-pause"></i> Grace period (s)</span>
+        <input type="number" id="wd-node-grace" min="30" value="300" style="width:90px;" title="How long the node must be frozen before auto-restart" />
+      </div>
+      <div class="row" style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border-row);">
+        <span class="row-label"><i class="ti ti-hourglass"></i> Startup ignore (s)</span>
+        <input type="number" id="wd-node-startup" min="0" value="300" style="width:90px;" title="Ignore containers that restarted less than this many seconds ago" />
+      </div>
+
+      <!-- Pool Nonce Watchdog -->
+      <p style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px;">Pool Nonce Watchdog</p>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-power"></i> Enabled</span>
+        <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+          <input type="checkbox" id="wd-pool-enabled" checked />
+          <span style="font-size:13px;color:var(--text-sub);">Auto-restart on nonce errors</span>
+        </label>
+      </div>
+      <div class="row">
+        <span class="row-label"><i class="ti ti-clock-pause"></i> Grace period (s)</span>
+        <input type="number" id="wd-pool-grace" min="30" value="180" style="width:90px;" title="How long nonce-too-low must persist before auto-restart" />
+      </div>
+      <div class="row" style="margin-bottom:14px;">
+        <span class="row-label"><i class="ti ti-hourglass"></i> Startup ignore (s)</span>
+        <input type="number" id="wd-pool-startup" min="0" value="120" style="width:90px;" title="Ignore pool that restarted less than this many seconds ago" />
+      </div>
+
+      <button class="btn-blue" onclick="saveWatchdogConfig()"><i class="ti ti-device-floppy"></i> Save</button>
+      <div class="ctrl-status" id="wd-status"></div>
+      </div><!-- end watchdogs-section-body -->
+    </div>
   </div>
 </div>
 
@@ -1197,6 +1276,30 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 function set(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+
+// ── Balance masking ───────────────────────────────────────────────────────
+let _balanceRaw     = null;
+let _balanceVisible = false;
+
+function _applyBalanceMask() {
+  const el  = document.getElementById('m-balance');
+  const eye = document.getElementById('m-balance-eye');
+  if (!el) return;
+  const hasValue = _balanceRaw && _balanceRaw !== '?' && _balanceRaw !== '—';
+  el.textContent = (hasValue && !_balanceVisible) ? '••••••' : (_balanceRaw || '—');
+  if (eye) eye.className = (_balanceVisible && hasValue) ? 'ti ti-eye' : 'ti ti-eye-off';
+}
+
+function _setBalance(val) {
+  _balanceRaw = val;
+  _applyBalanceMask();
+}
+
+function toggleBalance() {
+  if (!_balanceRaw || _balanceRaw === '?' || _balanceRaw === '—') return;
+  _balanceVisible = !_balanceVisible;
+  _applyBalanceMask();
+}
 function fmtDifficulty(n) {
   if (typeof n !== 'number' || isNaN(n)) return String(n);
   const full = Math.round(n).toLocaleString();
@@ -1221,7 +1324,7 @@ function showModal(title, cmd) {
 function closeModal() { document.getElementById('modal').style.display = 'none'; }
 function shortNodeId(id) {
   if (!id || id.length <= 20) return id;
-  return id.slice(0, 8) + '.......' + id.slice(-6);
+  return id.slice(0, 8) + '...' + id.slice(-6);
 }
 // Auto-scale hashrate: input is always MH/s, output is human-readable string
 function formatHashrate(mhs) {
@@ -1574,15 +1677,15 @@ async function fetchBalance() {
       }
     }
   }
-  if (!IS_SERVER) { set('w-balance', 'Requires server'); set('m-balance', '?'); return; }
-  if (!wallet) { set('m-balance', '?'); return; }
+  if (!IS_SERVER) { set('w-balance', 'Requires server'); _setBalance('?'); return; }
+  if (!wallet) { _setBalance('?'); return; }
   try {
     const hex  = await evm('eth_getBalance', [wallet, 'latest']);
     const raw  = parseInt(hex, 16) / 1e18;
     set('w-balance', raw.toFixed(8) + ' BDAG');
-    set('m-balance', raw.toFixed(4));
+    _setBalance(raw.toFixed(4));
     _updateUSDValue();
-  } catch(e) { set('w-balance', '?'); set('m-balance', '?'); }
+  } catch(e) { set('w-balance', '?'); _setBalance('?'); }
 }
 
 async function fetchResources() {
@@ -1616,8 +1719,8 @@ async function fetchResources() {
       set(id, j.mem?.[c] ?? '?');
     }
 
-    // Docker volumes
-    if (j.docker_vol_size) set('r-vol-size', j.docker_vol_size);
+    // Chain data folder size
+    if (j.chain_data_size) set('r-vol-size', j.chain_data_size);
 
     // Network I/O
     set('r-net-node1', j.net_io?.['bdag-miner-node-1'] ?? '?');
@@ -2052,6 +2155,10 @@ async function fetchContainers() {
 async function nodeAction(action) {
   const labels     = { start: 'Starting', stop: 'Stopping', restart: 'Rebooting' };
   const containers = 'bdag-miner-node-1 bdag-miner-node-2 asic-pool rpc-failover pool-db';
+  if (action === 'stop' || action === 'restart') {
+    const verb = action === 'stop' ? 'stop' : 'reboot';
+    if (!confirm('Are you sure you want to ' + verb + ' all node containers?')) return;
+  }
   if (!IS_SERVER) {
     showModal(action.charAt(0).toUpperCase() + action.slice(1) + ' nodes',
       `docker ${action} ${containers}`);
@@ -3562,116 +3669,194 @@ async function applyUpdate() {
   }
 }
 
-// ── Draggable panel ordering ──────────────────────────────────────────────────
-const PANEL_ORDER_KEY = 'bdag-panel-order';
-const PANEL_IDS = [
-  'panel-nodes', 'panel-pool-stats',
-  'panel-node-control', 'panel-containers', 'panel-resources',
-  'panel-machine', 'panel-wallet',
-  'panel-backup', 'panel-maintenance', 'panel-alerts', 'panel-watchdog',
-];
-
-function initSortable() {
-  const container = document.getElementById('adv-sortable');
-  if (!container || typeof Sortable === 'undefined') return;
-
-  // Restore saved panel order
-  try {
-    const saved = JSON.parse(localStorage.getItem(PANEL_ORDER_KEY) || '[]');
-    if (Array.isArray(saved) && saved.length > 0) {
-      saved.forEach(id => {
-        const el = document.getElementById(id);
-        if (el && el.parentNode === container) container.appendChild(el);
-      });
-    }
-  } catch (e) { /* ignore */ }
-
-  Sortable.create(container, {
-    handle: '.drag-handle',
-    animation: 150,
-    ghostClass: 'sortable-ghost',
-    dragClass:  'sortable-drag',
-    onEnd() {
-      const order = Array.from(container.children)
-        .map(el => el.id)
-        .filter(id => PANEL_IDS.includes(id));
-      localStorage.setItem(PANEL_ORDER_KEY, JSON.stringify(order));
-    }
-  });
-}
-
-// ── Data Tables floating panel ────────────────────────────────────────────
+// ── Generic floating panel ────────────────────────────────────────────────
 (function() {
-  let _tDrag = false, _tSX, _tSY, _tSL, _tST;
+  const _panels   = {};
+  const _anchored = {};
 
-  function _saveTablesState() {
-    const p = document.getElementById('tables-panel');
-    if (!p) return;
-    localStorage.setItem('bdag-tables-panel', JSON.stringify({
-      open:   p.style.display === 'flex',
-      left:   p.style.left   || '',
-      top:    p.style.top    || '',
-      right:  p.style.right  || '',
-      width:  p.offsetWidth  + 'px',
-      height: p.offsetHeight + 'px',
+  function _save(id) {
+    const p = document.getElementById(id);
+    // never save when hidden — offsetWidth/Height return 0 and corrupt stored size
+    if (!p || p.style.display === 'none') return;
+    localStorage.setItem('bdag-float-' + id, JSON.stringify({
+      open:     true,
+      left:     p.style.left   || '',
+      top:      p.style.top    || '',
+      width:    p.offsetWidth  + 'px',
+      height:   p.offsetHeight + 'px',
+      anchored: _anchored[id] || false,
     }));
   }
 
-  window.openTablesPanel = function() {
-    const p = document.getElementById('tables-panel');
+  function _restore(id) {
+    const p = document.getElementById(id);
     if (!p) return;
-    p.style.display = 'flex';
-    _saveTablesState();
+    try {
+      const s = JSON.parse(localStorage.getItem('bdag-float-' + id) || '{}');
+      // guard: only restore valid dimensions (avoid applying a saved '0px')
+      if (s.width  && parseInt(s.width)  > 100) p.style.width  = s.width;
+      if (s.height && parseInt(s.height) > 50)  p.style.height = s.height;
+      if (s.left) { p.style.left = s.left; p.style.right = 'auto'; }
+      if (s.top)    p.style.top  = s.top;
+      if (s.anchored) _applyAnchor(id, true);
+      // never auto-reopen on page load — user must click the toolbar button
+    } catch(e) {}
+  }
+
+  function _applyAnchor(id, anchored) {
+    _anchored[id] = anchored;
+    const p   = document.getElementById(id);
+    const btn = document.getElementById(id + '-pin-btn');
+    if (p)   p.style.resize = anchored ? 'none' : 'both';
+    if (btn) {
+      const icon = btn.querySelector('i');
+      if (icon) icon.className = anchored ? 'ti ti-pin-filled' : 'ti ti-pin';
+      btn.style.color = anchored ? '#f59e0b' : '';
+      btn.title = anchored ? 'Unpin (allow move & resize)' : 'Pin (lock position & size)';
+    }
+    if (p && p.querySelector) {
+      const handle = p.querySelector('.float-panel-handle');
+      if (handle) handle.style.cursor = anchored ? 'default' : 'move';
+    }
+  }
+
+  window.togglePanelAnchor = function(id) {
+    _applyAnchor(id, !_anchored[id]);
+    _save(id);
   };
 
-  window.closeTablesPanel = function() {
-    const p = document.getElementById('tables-panel');
+  window.openFloatPanel = function(id) {
+    const p = document.getElementById(id);
     if (!p) return;
+    p.style.display = 'flex';
+    _save(id);
+  };
+
+  window.closeFloatPanel = function(id) {
+    const p = document.getElementById(id);
+    if (!p) return;
+    // capture dimensions BEFORE hiding — offsetWidth/Height return 0 after display:none
+    const w = p.offsetWidth, h = p.offsetHeight;
+    const l = p.style.left, t = p.style.top;
     p.style.display = 'none';
-    _saveTablesState();
+    try {
+      localStorage.setItem('bdag-float-' + id, JSON.stringify({
+        open: false, left: l || '', top: t || '',
+        width: w + 'px', height: h + 'px',
+        anchored: _anchored[id] || false,
+      }));
+    } catch(e) {}
   };
 
   document.addEventListener('DOMContentLoaded', function() {
-    const p = document.getElementById('tables-panel');
-    const h = document.getElementById('tables-panel-handle');
-    if (!p || !h) return;
+    ['tables-panel', 'machine-panel', 'wallet-panel', 'sys-panel'].forEach(function(id) {
+      const panel = document.getElementById(id);
+      const handle = document.getElementById(id + '-handle') ||
+                     panel && panel.querySelector('.float-panel-handle');
+      if (!panel || !handle) return;
+      _restore(id);
 
-    // drag
-    h.addEventListener('mousedown', function(e) {
-      if (e.target.closest('button')) return;
-      _tDrag = true;
-      _tSX = e.clientX; _tSY = e.clientY;
-      const r = p.getBoundingClientRect();
-      _tSL = r.left; _tST = r.top;
-      document.body.style.userSelect = 'none';
-      e.preventDefault();
-    });
-    document.addEventListener('mousemove', function(e) {
-      if (!_tDrag) return;
-      p.style.left   = Math.max(0, _tSL + e.clientX - _tSX) + 'px';
-      p.style.top    = Math.max(0, _tST + e.clientY - _tSY) + 'px';
-      p.style.right  = 'auto';
-    });
-    document.addEventListener('mouseup', function() {
-      if (!_tDrag) return;
-      _tDrag = false;
-      document.body.style.userSelect = '';
-      _saveTablesState();
+      let drag = false, sx, sy, sl, st;
+      handle.addEventListener('mousedown', function(e) {
+        if (e.target.closest('button')) return;
+        if (_anchored[id]) return;  // locked — ignore drag attempts
+        drag = true; sx = e.clientX; sy = e.clientY;
+        const r = panel.getBoundingClientRect();
+        sl = r.left; st = r.top;
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+      document.addEventListener('mousemove', function(e) {
+        if (!drag || !_panels[id]) return;
+        panel.style.left   = Math.max(0, sl + e.clientX - sx) + 'px';
+        panel.style.top    = Math.max(0, st + e.clientY - sy) + 'px';
+        panel.style.right  = 'auto';
+      });
+      document.addEventListener('mouseup', function() {
+        if (!drag || !_panels[id]) return;
+        drag = false; document.body.style.userSelect = '';
+        _save(id);
+      });
+      _panels[id] = true;
     });
 
-    // restore saved state
-    try {
-      const s = JSON.parse(localStorage.getItem('bdag-tables-panel') || '{}');
-      if (s.width)  p.style.width  = s.width;
-      if (s.height) p.style.height = s.height;
-      if (s.left) { p.style.left = s.left; p.style.right = 'auto'; }
-      if (s.top)    p.style.top  = s.top;
-      if (s.open)   p.style.display = 'flex';
-    } catch(e) {}
+    // save size on resize (observe both panels)
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(entries => {
+        entries.forEach(e => { if (e.target.id) _save(e.target.id); });
+      });
+      ['tables-panel', 'machine-panel', 'wallet-panel', 'sys-panel'].forEach(id => {
+        const p = document.getElementById(id);
+        if (p) ro.observe(p);
+      });
+    }
   });
 })();
 
-document.addEventListener('DOMContentLoaded', initSortable);
+// ── GridStack dashboard layout ────────────────────────────────────────────
+const GRID_LAYOUT_KEY = 'bdag-grid-layout-v3';
+const GRID_PIN_KEY    = 'bdag-grid-pins-v3';
+let _grid = null;
+const _pinnedPanels = {};
+
+function _applyGridPin(id, pinned) {
+  _pinnedPanels[id] = pinned;
+  const el  = document.querySelector('.grid-stack-item[gs-id="' + id + '"]');
+  const btn = document.getElementById('gpin-' + id);
+  if (el && _grid) _grid.update(el, { noMove: pinned, noResize: pinned });
+  if (btn) {
+    btn.querySelector('i').className = pinned ? 'ti ti-pin-filled' : 'ti ti-pin';
+    btn.title = pinned ? 'Unpin (allow drag & resize)' : 'Pin (lock position & size)';
+    btn.classList.toggle('pinned', pinned);
+  }
+  if (el) {
+    const handle = el.querySelector('.section-drag-handle');
+    if (handle) handle.style.cursor = pinned ? 'default' : '';
+  }
+}
+
+function toggleGridPin(id) {
+  _applyGridPin(id, !_pinnedPanels[id]);
+  try { localStorage.setItem(GRID_PIN_KEY, JSON.stringify(_pinnedPanels)); } catch(e) {}
+}
+
+function _loadGridPins() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(GRID_PIN_KEY) || '{}');
+    Object.keys(saved).forEach(id => { if (saved[id]) _applyGridPin(id, true); });
+  } catch(e) {}
+}
+
+function initGrid() {
+  if (typeof GridStack === 'undefined') return;
+  _grid = GridStack.init({
+    column: 12,
+    cellHeight: 40,
+    animate: true,
+    float: true,
+    draggable: { handle: '.section-title', scroll: false },
+    resizable: { handles: 'e,se,s,sw,w,ne,nw,n' },
+    minRow: 1,
+  }, '#adv-sortable');
+
+  // Restore saved layout
+  try {
+    const saved = localStorage.getItem(GRID_LAYOUT_KEY);
+    if (saved) _grid.load(JSON.parse(saved));
+  } catch(e) {}
+
+  // Restore pin states (must run after layout load so GridStack nodes exist)
+  _loadGridPins();
+
+  // Save layout on any change
+  _grid.on('change resizestop dragstop', function() {
+    try {
+      localStorage.setItem(GRID_LAYOUT_KEY, JSON.stringify(_grid.save(false)));
+    } catch(e) {}
+  });
+}
+
+document.addEventListener('DOMContentLoaded', initGrid);
 
 async function restartNodeServer() {
   const btn = document.getElementById('upd-btn-restart');

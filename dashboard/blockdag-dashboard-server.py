@@ -118,6 +118,36 @@ WATCHDOG_CONTAINERS = ["bdag-miner-node-1", "bdag-miner-node-2"]
 _watchdog_lock  = threading.Lock()
 _watchdog_state = {}        # container -> {"frozen_since": float|None}
 
+# Chain data size — walked in a background thread every 5 min so requests never block
+_chain_data_cache: dict = {"value": None, "ts": 0.0, "busy": False}
+
+def _refresh_chain_data_size() -> None:
+    if _chain_data_cache["busy"]:
+        return
+    _chain_data_cache["busy"] = True
+    try:
+        chain_dir = INSTALL_DIR / "chain-data"
+        if not chain_dir.is_dir():
+            return
+        total = 0
+        for dp, _, files in os.walk(chain_dir):
+            for fn in files:
+                try:
+                    total += os.path.getsize(os.path.join(dp, fn))
+                except OSError:
+                    pass
+        if total >= 1_073_741_824:
+            _chain_data_cache["value"] = f"{total / 1_073_741_824:.2f} GB"
+        elif total >= 1_048_576:
+            _chain_data_cache["value"] = f"{total / 1_048_576:.1f} MB"
+        else:
+            _chain_data_cache["value"] = f"{total / 1024:.0f} KB"
+        _chain_data_cache["ts"] = time.time()
+    except Exception:
+        pass
+    finally:
+        _chain_data_cache["busy"] = False
+
 # ── Pool nonce watchdog ───────────────────────────────────────────────────────
 POOL_WATCHDOG_INTERVAL = 60    # seconds between checks
 POOL_WATCHDOG_GRACE    = 180   # seconds of continuous nonce errors before restart
@@ -1662,19 +1692,13 @@ class Handler(BaseHTTPRequestHandler):
         result["uptimes"] = uptimes
         result["mem"]     = mem
 
-        # Docker volumes disk usage
+        # Chain data folder size (bind-mounted, not named Docker volumes)
+        # Walk runs in a background thread every 5 min so this never blocks.
         try:
-            r = subprocess.run(
-                ["docker", "system", "df", "--format", "{{json .}}"],
-                capture_output=True, text=True, timeout=15)
-            for line in r.stdout.strip().splitlines():
-                try:
-                    obj = json.loads(line)
-                    if "Volume" in obj.get("Type", ""):
-                        result["docker_vol_size"] = obj.get("Size")
-                        break
-                except Exception:
-                    pass
+            if time.time() - _chain_data_cache["ts"] > 300:
+                threading.Thread(target=_refresh_chain_data_size, daemon=True).start()
+            if _chain_data_cache["value"]:
+                result["chain_data_size"] = _chain_data_cache["value"]
         except Exception:
             pass
 
