@@ -1333,6 +1333,7 @@ class Handler(BaseHTTPRequestHandler):
                     "height": int(r[1]),
                     "status": r[2],
                     "time":   r[3],
+                    "ts":     str(r[4]) if len(r) >= 5 and r[4] else None,
                     "finder": finder_log or finder_db,
                 })
 

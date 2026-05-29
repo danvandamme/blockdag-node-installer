@@ -626,7 +626,7 @@
             <th>Block Hash</th>
             <th>Height</th>
             <th>Status</th>
-            <th>Time</th>
+            <th>Time <span style="font-weight:400;font-size:10px;color:var(--text-sub);">server / local</span></th>
           </tr>
         </thead>
         <tbody id="recent-blocks-tbody">
@@ -2481,6 +2481,20 @@ function toggleRecentBlocks() {
   if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
 }
 
+/* Convert a raw DB timestamp (assumed UTC, e.g. "2026-05-29 14:32:15") to
+ * the browser's local time string.  Returns null if the string can't be parsed. */
+function _blockLocalTime(ts) {
+  if (!ts) return null;
+  try {
+    // PostgreSQL TIMESTAMP strings use a space separator; JS Date needs 'T'.
+    // Appending 'Z' tells the parser this is UTC.
+    const iso = ts.replace(' ', 'T').replace(/(\.\d+)?$/, 'Z');
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch(e) { return null; }
+}
+
 function _updateRecentBlocks(recent) {
   const tbody = document.getElementById('recent-blocks-tbody');
   const count = document.getElementById('recent-blocks-count');
@@ -2534,7 +2548,7 @@ function _updateRecentBlocks(recent) {
       </td>
       <td style="color:var(--text-muted);white-space:nowrap;">#${(b.height||0).toLocaleString()}</td>
       <td style="white-space:nowrap;"><span class="badge badge-${cls[b.status]||'warn'}" style="font-size:10px;padding:2px 6px;">${b.status}</span></td>
-      <td style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${b.time || '—'}</td>
+      <td style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${b.time || '—'}${(()=>{ const lt = _blockLocalTime(b.ts); return lt ? `<br><span style="color:var(--text-sub);font-size:10px;">${lt}</span>` : ''; })()}</td>
     </tr>`;
   }).join('');
 }
