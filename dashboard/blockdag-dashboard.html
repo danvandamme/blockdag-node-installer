@@ -2490,8 +2490,9 @@ function _toLocalTime(ts) {
   try {
     // PostgreSQL uses a space before the time part; ISO 8601 needs 'T'.
     let iso = ts.replace(' ', 'T');
-    // Only append 'Z' if there is no timezone info already (+HH:MM, -HH:MM, or Z).
-    if (!/Z$|[+-]\d{2}:\d{2}$/.test(iso)) iso += 'Z';
+    // Only append 'Z' if there is no timezone info already.
+    // Handles: Z, +HH:MM, -HH:MM, +HH, -HH (psql outputs +00 without a colon).
+    if (!/Z$|[+-]\d{2}(:\d{2})?$/.test(iso)) iso += 'Z';
     const d = new Date(iso);
     if (isNaN(d.getTime())) return null;
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

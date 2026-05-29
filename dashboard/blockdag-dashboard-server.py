@@ -1262,7 +1262,7 @@ class Handler(BaseHTTPRequestHandler):
                     "  p.tx_hash, p.amount, "
                     "  to_char(p.created_at,'MM-DD HH24:MI'), "
                     "  COALESCE(c.miner_address, ''), "
-                    "  p.created_at "
+                    "  to_char(p.created_at,'YYYY-MM-DD HH24:MI:SS') "
                     "FROM payouts p "
                     "LEFT JOIN credits c "
                     "  ON c.amount = p.amount "
